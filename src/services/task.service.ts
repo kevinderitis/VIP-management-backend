@@ -241,9 +241,16 @@ export const createTaskService = () => {
       const task = await TaskModel.findById(taskId)
       if (!task || task.status !== 'AVAILABLE') throw new HttpError(400, 'Task is not available')
       if (task.audience !== audienceForRole(actorRole)) throw new HttpError(403, 'This task does not belong to your workspace')
+      const user = await UserModel.findById(userId)
+      if (!user) throw new HttpError(404, actorRole === 'CLEANER' ? 'Cleaner not found' : 'Volunteer not found')
       task.status = 'ASSIGNED'
       task.set('assignedToId', userId)
       await task.save()
+      await activityService.create(
+        'TASK_TAKEN',
+        `Task claimed: ${task.title}`,
+        `${user.name} claimed this task from the shared board.`,
+      )
       emitRealtimeEvent('tasks:updated', { type: 'claimed', taskId })
       return serializeTask(task.toObject())
     },
@@ -252,10 +259,17 @@ export const createTaskService = () => {
       const task = await TaskModel.findById(taskId)
       if (!task || String(task.assignedToId) !== userId) throw new HttpError(400, 'Task cannot be released by this user')
       if (task.audience !== audienceForRole(actorRole)) throw new HttpError(403, 'This task does not belong to your workspace')
+      const user = await UserModel.findById(userId)
+      if (!user) throw new HttpError(404, actorRole === 'CLEANER' ? 'Cleaner not found' : 'Volunteer not found')
       task.status = 'AVAILABLE'
       task.set('assignedToId', undefined)
       task.publishedAt = new Date()
       await task.save()
+      await activityService.create(
+        'TASK_RELEASED',
+        `Task released: ${task.title}`,
+        `${user.name} released this task back to the shared board.`,
+      )
       emitRealtimeEvent('tasks:updated', { type: 'released', taskId })
       return serializeTask(task.toObject())
     },

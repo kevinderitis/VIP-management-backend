@@ -94,4 +94,12 @@ router.post(
   }),
 )
 
+router.delete(
+  '/assignments/:assignmentId',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    response.json(await routineService.removeAssignment(getParam(request.params.assignmentId)))
+  }),
+)
+
 export { router as routinesRouter }

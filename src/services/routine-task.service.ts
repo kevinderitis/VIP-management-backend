@@ -1,7 +1,9 @@
 import { TaskCategory, TaskPriority, TaskSource, Weekday } from '../domain/enums.js'
 import { HttpError } from '../lib/http-error.js'
 import { RoutineTaskAssignmentModel, RoutineTaskTemplateModel } from '../models/routine-task.model.js'
+import { TaskCompletionModel } from '../models/task-completion.model.js'
 import { TaskModel } from '../models/task.model.js'
+import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
 import { combineDateAndTime } from '../utils/date.js'
 import { serializeRoutineAssignment, serializeRoutineTask } from '../utils/serializers.js'
@@ -165,6 +167,40 @@ export const createRoutineTaskService = () => {
       )
       emitRealtimeEvent('routines:assigned', { taskId, volunteerId, generated: tasksToCreate.length })
       return serializeRoutineAssignment(assignment.toObject())
+    },
+
+    async removeAssignment(assignmentId: string) {
+      const assignment = await RoutineTaskAssignmentModel.findById(assignmentId)
+      if (!assignment) throw new HttpError(404, 'Recurring assignment not found')
+
+      const generatedTasks = await TaskModel.find({ routineAssignmentId: assignment._id })
+
+      const completedTasks = generatedTasks.filter((task) => task.status === 'COMPLETED' && task.assignedToId)
+      const impactedUserIds = [...new Set(completedTasks.map((task) => String(task.assignedToId)))]
+
+      if (impactedUserIds.length > 0) {
+        const users = await UserModel.find({ _id: { $in: impactedUserIds } })
+        const userMap = new Map(users.map((user) => [String(user._id), user]))
+
+        completedTasks.forEach((task) => {
+          const user = userMap.get(String(task.assignedToId))
+          if (!user) return
+          user.completedTasks = Math.max(0, user.completedTasks - 1)
+          user.points = Math.max(0, user.points - task.points)
+          user.lifetimePoints = Math.max(0, user.lifetimePoints - task.points)
+        })
+
+        await Promise.all(users.map((user) => user.save()))
+      }
+
+      await TaskCompletionModel.deleteMany({
+        taskId: { $in: generatedTasks.map((task) => task._id) },
+      })
+      await TaskModel.deleteMany({ routineAssignmentId: assignment._id })
+      await assignment.deleteOne()
+
+      emitRealtimeEvent('routines:assignment-deleted', { assignmentId })
+      return { success: true }
     },
   }
 }
