@@ -1,3 +1,4 @@
+import { BED_STATUS_PRESETS, summarizeBeds } from '../domain/cleaning-places.js'
 import { TaskAudience, TaskCategory, TaskPriority, TaskSource, TaskStatus, UserRole } from '../domain/enums.js'
 import { HttpError } from '../lib/http-error.js'
 import { CleaningAreaModel } from '../models/cleaning-area.model.js'
@@ -12,6 +13,73 @@ import { createActivityService } from './activity.service.js'
 export const createTaskService = () => {
   const activityService = createActivityService()
   const audienceForRole = (role: UserRole): TaskAudience => (role === 'CLEANER' ? 'CLEANING' : 'VOLUNTEER')
+  const updateRoomBedStateFromTask = async (
+    task: {
+      cleaningRoomNumber?: number | null
+      cleaningRoomCode?: string | null
+      cleaningRoomSection?: string | null
+      cleaningLocationLabel?: string | null
+      cleaningBedNumber?: number | null
+    },
+    resultingBedState: 'READY' | 'OCCUPIED',
+  ) => {
+    if (!task.cleaningRoomNumber && !task.cleaningRoomCode) return
+
+    const preset = BED_STATUS_PRESETS[resultingBedState]
+    const existingStatus = await CleaningPlaceStatusModel.findOne({
+      placeType: 'ROOM',
+      ...(task.cleaningRoomCode ? { roomCode: task.cleaningRoomCode } : { roomNumber: task.cleaningRoomNumber }),
+    })
+
+    const roomType = existingStatus?.roomType ?? 'PRIVATE'
+    const currentBeds = Array.isArray(existingStatus?.beds) && existingStatus.beds.length
+      ? existingStatus.beds.map((bed) => ({
+          bedNumber: bed.bedNumber,
+          label: bed.label,
+          color: bed.color,
+        }))
+      : [{ bedNumber: 1, label: preset.label, color: preset.color }]
+
+    const targetBedNumber = task.cleaningBedNumber ?? 1
+    const nextBeds = currentBeds.some((bed) => bed.bedNumber === targetBedNumber)
+      ? currentBeds.map((bed) =>
+          bed.bedNumber === targetBedNumber ? { ...bed, label: preset.label, color: preset.color } : bed,
+        )
+      : [...currentBeds, { bedNumber: targetBedNumber, label: preset.label, color: preset.color }]
+
+    const serviceNeedsCleaning =
+      ['need cleaning', 'needs cleaning'].includes(existingStatus?.roomServiceLabel?.trim().toLowerCase() ?? '')
+    const roomSummary =
+      roomType === 'SHARED'
+        ? serviceNeedsCleaning
+          ? {
+              label: existingStatus?.roomServiceLabel ?? 'Needs cleaning',
+              color: existingStatus?.roomServiceColor ?? '#ef4444',
+            }
+          : summarizeBeds(nextBeds)
+        : undefined
+
+    await CleaningPlaceStatusModel.findOneAndUpdate(
+      {
+        placeType: 'ROOM',
+        ...(task.cleaningRoomCode ? { roomCode: task.cleaningRoomCode } : { roomNumber: task.cleaningRoomNumber }),
+      },
+      {
+        placeType: 'ROOM',
+        roomNumber: task.cleaningRoomNumber,
+        roomCode: task.cleaningRoomCode,
+        roomSection: task.cleaningRoomSection,
+        roomType,
+        placeLabel: task.cleaningLocationLabel ?? `Room ${task.cleaningRoomCode ?? task.cleaningRoomNumber}`,
+        label: roomSummary?.label ?? existingStatus?.label ?? 'Clean',
+        color: roomSummary?.color ?? existingStatus?.color ?? '#22c55e',
+        roomServiceLabel: existingStatus?.roomServiceLabel,
+        roomServiceColor: existingStatus?.roomServiceColor,
+        beds: nextBeds,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    )
+  }
 
   return {
     async list(filters: { status?: string; search?: string; audience?: TaskAudience }) {
@@ -65,6 +133,8 @@ export const createTaskService = () => {
       cleaningLocationType?: 'ROOM' | 'CUSTOM'
       cleaningLocationLabel?: string
       cleaningRoomNumber?: number
+      cleaningRoomCode?: string
+      cleaningRoomSection?: string
       createdById: string
     }) {
       const startsAt = input.startsAt
@@ -99,6 +169,8 @@ export const createTaskService = () => {
         cleaningLocationType: input.cleaningLocationType,
         cleaningLocationLabel: input.cleaningLocationLabel,
         cleaningRoomNumber: input.cleaningRoomNumber,
+        cleaningRoomCode: input.cleaningRoomCode,
+        cleaningRoomSection: input.cleaningRoomSection,
       })
 
       await activityService.create(
@@ -125,6 +197,8 @@ export const createTaskService = () => {
       cleaningLocationType?: 'ROOM' | 'CUSTOM'
       cleaningLocationLabel?: string
       cleaningRoomNumber?: number
+      cleaningRoomCode?: string
+      cleaningRoomSection?: string
     }) {
       const task = await TaskModel.findById(taskId)
       if (!task) throw new HttpError(404, 'Task not found')
@@ -151,6 +225,8 @@ export const createTaskService = () => {
       task.cleaningLocationType = input.cleaningLocationType
       task.cleaningLocationLabel = input.cleaningLocationLabel
       task.cleaningRoomNumber = input.cleaningRoomNumber
+      task.cleaningRoomCode = input.cleaningRoomCode
+      task.cleaningRoomSection = input.cleaningRoomSection
       task.publishedAt = nextPublishedAt
       if (task.source === 'MANUAL') {
         task.status =
@@ -225,6 +301,7 @@ export const createTaskService = () => {
       }
 
       task.assignedToId = assignee._id
+      task.lastAssignedToId = assignee._id
       task.status = task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED'
       await task.save()
 
@@ -245,6 +322,7 @@ export const createTaskService = () => {
       if (!user) throw new HttpError(404, actorRole === 'CLEANER' ? 'Cleaner not found' : 'Volunteer not found')
       task.status = 'ASSIGNED'
       task.set('assignedToId', userId)
+      task.set('lastAssignedToId', userId)
       await task.save()
       await activityService.create(
         'TASK_TAKEN',
@@ -274,12 +352,20 @@ export const createTaskService = () => {
       return serializeTask(task.toObject())
     },
 
-    async complete(taskId: string, userId: string, actorRole: UserRole = 'VOLUNTEER') {
+    async complete(
+      taskId: string,
+      userId: string,
+      actorRole: UserRole = 'VOLUNTEER',
+      resultingBedState?: 'READY' | 'OCCUPIED',
+    ) {
       const task = await TaskModel.findById(taskId)
       if (!task || String(task.assignedToId) !== userId) throw new HttpError(400, 'Task cannot be completed by this user')
       if (task.audience !== audienceForRole(actorRole)) throw new HttpError(403, 'This task does not belong to your workspace')
       const user = await UserModel.findById(userId)
       if (!user) throw new HttpError(404, actorRole === 'CLEANER' ? 'Cleaner not found' : 'Volunteer not found')
+      if (actorRole === 'VOLUNTEER' && task.bedTask && !resultingBedState) {
+        throw new HttpError(400, 'A resulting bed state is required for bed-making tasks')
+      }
 
       task.status = 'COMPLETED'
       await task.save()
@@ -301,15 +387,38 @@ export const createTaskService = () => {
       })
 
       if (actorRole === 'CLEANER' && task.cleaningLocationType && task.cleaningLocationLabel) {
-        if (task.cleaningLocationType === 'ROOM' && task.cleaningRoomNumber) {
+        if (task.cleaningLocationType === 'ROOM' && (task.cleaningRoomNumber || task.cleaningRoomCode)) {
+          const existingStatus = await CleaningPlaceStatusModel.findOne({
+            placeType: 'ROOM',
+            ...(task.cleaningRoomCode ? { roomCode: task.cleaningRoomCode } : { roomNumber: task.cleaningRoomNumber }),
+          })
+          const currentBeds = Array.isArray(existingStatus?.beds)
+            ? existingStatus.beds.map((bed) => ({
+                bedNumber: bed.bedNumber,
+                label: bed.label,
+                color: bed.color,
+              }))
+            : []
+          const roomType = existingStatus?.roomType ?? 'PRIVATE'
+          const roomSummary = roomType === 'SHARED' ? summarizeBeds(currentBeds) : undefined
+
           await CleaningPlaceStatusModel.findOneAndUpdate(
-            { placeType: 'ROOM', roomNumber: task.cleaningRoomNumber },
+            {
+              placeType: 'ROOM',
+              ...(task.cleaningRoomCode ? { roomCode: task.cleaningRoomCode } : { roomNumber: task.cleaningRoomNumber }),
+            },
             {
               placeType: 'ROOM',
               roomNumber: task.cleaningRoomNumber,
+              roomCode: task.cleaningRoomCode,
+              roomSection: task.cleaningRoomSection,
+              roomType,
               placeLabel: task.cleaningLocationLabel,
-              label: 'Clean',
-              color: '#22c55e',
+              label: roomSummary?.label ?? 'Clean',
+              color: roomSummary?.color ?? '#22c55e',
+              roomServiceLabel: 'Clean',
+              roomServiceColor: '#22c55e',
+              beds: currentBeds,
             },
             { upsert: true, new: true, setDefaultsOnInsert: true },
           )
@@ -340,6 +449,10 @@ export const createTaskService = () => {
             { upsert: true, new: true, setDefaultsOnInsert: true },
           )
         }
+      }
+
+      if (actorRole === 'VOLUNTEER' && task.bedTask && resultingBedState) {
+        await updateRoomBedStateFromTask(task, resultingBedState)
       }
 
       await activityService.create(

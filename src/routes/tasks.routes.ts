@@ -27,6 +27,10 @@ const taskSchema = z.object({
   path: ['publishAt'],
 })
 
+const completionSchema = z.object({
+  resultingBedState: z.enum(['READY', 'OCCUPIED']).optional(),
+})
+
 router.get(
   '/',
   requireAuth,
@@ -130,7 +134,8 @@ router.post(
   '/:taskId/complete',
   requireRole('VOLUNTEER'),
   asyncHandler(async (request, response) => {
-    response.json(await taskService.complete(getParam(request.params.taskId), request.auth!.userId))
+    const payload = completionSchema.parse(request.body ?? {})
+    response.json(await taskService.complete(getParam(request.params.taskId), request.auth!.userId, 'VOLUNTEER', payload.resultingBedState))
   }),
 )
 

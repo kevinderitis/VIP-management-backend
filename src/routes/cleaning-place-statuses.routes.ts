@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { ROOM_TYPES } from '../domain/cleaning-places.js'
 import { CLEANING_LOCATION_TYPES } from '../domain/enums.js'
 import { asyncHandler } from '../lib/async-handler.js'
 import { requireRole } from '../middlewares/auth.js'
@@ -11,11 +12,24 @@ const service = createCleaningPlaceStatusService()
 const payloadSchema = z.object({
   placeType: z.enum(CLEANING_LOCATION_TYPES),
   roomNumber: z.number().int().min(1).max(300).optional(),
+  roomCode: z.string().min(1).optional(),
+  roomSection: z.string().min(1).optional(),
+  roomType: z.enum(ROOM_TYPES).optional(),
   cleaningAreaId: z.string().optional(),
   placeLabel: z.string().min(1),
   label: z.string().min(1),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  beds: z
+    .array(
+      z.object({
+        bedNumber: z.number().int().min(1).max(24),
+        label: z.string().min(1),
+        color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+      }),
+    )
+    .optional(),
   assignCleanerId: z.string().optional(),
+  assignVolunteerId: z.string().optional(),
 })
 
 router.get(

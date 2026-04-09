@@ -22,6 +22,8 @@ const taskSchema = z
     cleaningLocationType: z.enum(CLEANING_LOCATION_TYPES),
     cleaningLocationLabel: z.string().min(1),
     cleaningRoomNumber: z.number().int().min(1).max(300).optional(),
+    cleaningRoomCode: z.string().optional(),
+    cleaningRoomSection: z.string().optional(),
   })
   .refine((value) => value.endsAt.getTime() > value.startsAt.getTime(), {
     message: 'End time must be later than start time',

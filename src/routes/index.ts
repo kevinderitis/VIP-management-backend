@@ -4,6 +4,7 @@ import { authRouter } from './auth.routes.js'
 import { cleanersRouter } from './cleaners.routes.js'
 import { cleaningAreasRouter } from './cleaning-areas.routes.js'
 import { cleaningPlaceStatusesRouter } from './cleaning-place-statuses.routes.js'
+import { cleaningRoomsRouter } from './cleaning-rooms.routes.js'
 import { cleaningTasksRouter } from './cleaning-tasks.routes.js'
 import { dashboardRouter } from './dashboard.routes.js'
 import { packsRouter } from './packs.routes.js'
@@ -30,6 +31,7 @@ router.use('/cleaners', cleanersRouter)
 router.use('/tasks', tasksRouter)
 router.use('/cleaning-tasks', cleaningTasksRouter)
 router.use('/cleaning-areas', cleaningAreasRouter)
+router.use('/cleaning-rooms', cleaningRoomsRouter)
 router.use('/cleaning-place-statuses', cleaningPlaceStatusesRouter)
 router.use('/packs', packsRouter)
 router.use('/routine-tasks', routinesRouter)

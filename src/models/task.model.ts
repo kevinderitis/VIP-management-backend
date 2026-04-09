@@ -23,6 +23,7 @@ const taskSchema = new Schema(
     notes: { type: String },
     source: { type: String, enum: TASK_SOURCES, required: true },
     assignedToId: { type: Schema.Types.ObjectId, ref: 'User' },
+    lastAssignedToId: { type: Schema.Types.ObjectId, ref: 'User' },
     createdById: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     packId: { type: Schema.Types.ObjectId, ref: 'TaskPack' },
     packAssignmentId: { type: Schema.Types.ObjectId, ref: 'TaskPackAssignment' },
@@ -31,6 +32,10 @@ const taskSchema = new Schema(
     cleaningLocationType: { type: String, enum: CLEANING_LOCATION_TYPES },
     cleaningLocationLabel: { type: String },
     cleaningRoomNumber: { type: Number },
+    cleaningRoomCode: { type: String, index: true },
+    cleaningRoomSection: { type: String },
+    cleaningBedNumber: { type: Number, min: 1, max: 24 },
+    bedTask: { type: Boolean, default: false },
   },
   { timestamps: true },
 )

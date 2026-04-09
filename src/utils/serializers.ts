@@ -41,6 +41,7 @@ export const serializeTask = (task: DocumentLike) => ({
   scheduledAt: task.startsAt,
   endsAt: task.endsAt,
   assignedTo: idOf(task.assignedToId),
+  lastAssignedTo: idOf(task.lastAssignedToId),
   createdBy: idOf(task.createdById),
   notes: task.notes,
   source: lower(task.source),
@@ -51,6 +52,42 @@ export const serializeTask = (task: DocumentLike) => ({
   cleaningLocationType: lower(task.cleaningLocationType),
   cleaningLocationLabel: task.cleaningLocationLabel,
   cleaningRoomNumber: task.cleaningRoomNumber,
+  cleaningRoomCode: task.cleaningRoomCode,
+  cleaningRoomSection: task.cleaningRoomSection,
+  cleaningBedNumber: task.cleaningBedNumber,
+  bedTask: Boolean(task.bedTask),
+})
+
+export const serializeCleaningPlaceStatus = (status: DocumentLike) => ({
+  id: idOf(status._id),
+  placeType: lower(status.placeType),
+  roomNumber: status.roomNumber,
+  roomCode: status.roomCode,
+  roomSection: status.roomSection,
+  roomType: lower(status.roomType),
+  cleaningAreaId: idOf(status.cleaningAreaId),
+  placeLabel: status.placeLabel,
+  label: status.label,
+  color: status.color,
+  roomServiceLabel: status.roomServiceLabel,
+  roomServiceColor: status.roomServiceColor,
+  beds: Array.isArray(status.beds)
+    ? status.beds.map((bed: Record<string, unknown>) => ({
+        bedNumber: bed.bedNumber,
+        label: bed.label,
+        color: bed.color,
+      }))
+    : [],
+})
+
+export const serializeCleaningRoom = (room: DocumentLike) => ({
+  id: idOf(room._id),
+  code: room.code,
+  section: room.section,
+  label: room.label,
+  roomType: lower(room.roomType),
+  bedCount: room.bedCount,
+  isActive: room.isActive,
 })
 
 export const serializePack = (pack: DocumentLike) => ({
