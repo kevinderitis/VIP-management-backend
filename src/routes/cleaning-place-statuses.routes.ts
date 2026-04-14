@@ -30,6 +30,24 @@ const payloadSchema = z.object({
     .optional(),
   assignCleanerId: z.string().optional(),
   assignVolunteerId: z.string().optional(),
+  applyVolunteerAssignment: z.boolean().optional(),
+})
+
+const bulkBedTaskSchema = z.object({
+  selections: z
+    .array(
+      z.object({
+        roomCode: z.string().min(1),
+        roomSection: z.string().min(1).optional(),
+        roomType: z.enum(ROOM_TYPES),
+        placeLabel: z.string().min(1),
+        bedNumbers: z.array(z.number().int().min(1).max(24)).min(1),
+      }),
+    )
+    .min(1),
+  assignVolunteerId: z.string().optional(),
+  label: z.string().min(1),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 })
 
 router.get(
@@ -46,6 +64,15 @@ router.post(
   asyncHandler(async (request, response) => {
     const payload = payloadSchema.parse(request.body)
     response.json(await service.upsert({ ...payload, adminUserId: request.auth!.userId }))
+  }),
+)
+
+router.post(
+  '/bulk-bed-tasks',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    const payload = bulkBedTaskSchema.parse(request.body)
+    response.json(await service.bulkCreateBedTasks({ ...payload, adminUserId: request.auth!.userId }))
   }),
 )
 
