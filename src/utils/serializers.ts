@@ -173,6 +173,17 @@ export const serializeActivity = (activity: DocumentLike) => ({
   createdAt: activity.createdAt,
 })
 
+export const serializeOfficeCall = (call: DocumentLike) => ({
+  id: idOf(call._id),
+  volunteerId: idOf(call.volunteerId),
+  callerAdminId: idOf(call.callerAdminId),
+  callerAdminName: call.callerAdminName,
+  message: call.message,
+  status: lower(call.status),
+  createdAt: call.createdAt,
+  acknowledgedAt: call.acknowledgedAt,
+})
+
 export const serializeCompletion = (completion: DocumentLike) => ({
   id: idOf(completion._id),
   taskId: idOf(completion.taskId),

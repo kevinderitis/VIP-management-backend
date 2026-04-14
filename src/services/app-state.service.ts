@@ -2,6 +2,7 @@ import { ActivityModel } from '../models/activity.model.js'
 import { CleaningAreaModel } from '../models/cleaning-area.model.js'
 import { CleaningPlaceStatusModel } from '../models/cleaning-place-status.model.js'
 import { CleaningRoomModel } from '../models/cleaning-room.model.js'
+import { OfficeCallModel } from '../models/office-call.model.js'
 import { RedemptionModel, RewardModel } from '../models/reward.model.js'
 import { RoutineTaskAssignmentModel, RoutineTaskTemplateModel } from '../models/routine-task.model.js'
 import { TaskCompletionModel } from '../models/task-completion.model.js'
@@ -15,6 +16,7 @@ import {
   serializeCompletion,
   serializeCleaningPlaceStatus,
   serializeCleaningRoom,
+  serializeOfficeCall,
   serializePack,
   serializePackAssignment,
   serializeRedemption,
@@ -33,7 +35,7 @@ export const createAppStateService = () => ({
     const isAdmin = role === 'ADMIN'
     const isCleaner = role === 'CLEANER'
 
-    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms] =
+    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms, officeCalls] =
       await Promise.all([
         UserModel.find(
           isAdmin ? {} : isCleaner ? { role: 'CLEANER' } : { role: 'VOLUNTEER' },
@@ -62,6 +64,9 @@ export const createAppStateService = () => ({
         CleaningAreaModel.find().sort({ name: 1 }).lean(),
         CleaningPlaceStatusModel.find().sort({ updatedAt: -1 }).lean(),
         CleaningRoomModel.find().sort({ section: 1, code: 1 }).lean(),
+        role === 'VOLUNTEER'
+          ? OfficeCallModel.find({ volunteerId: userId, status: 'ACTIVE' }).sort({ createdAt: -1 }).lean()
+          : Promise.resolve([]),
       ])
 
     return {
@@ -75,6 +80,7 @@ export const createAppStateService = () => ({
       rewards: rewards.map(serializeReward),
       redemptions: redemptions.map(serializeRedemption),
       activities: activities.map(serializeActivity),
+      officeCalls: officeCalls.map(serializeOfficeCall),
       cleaningAreas: cleaningAreas.map((area) => ({
         id: String(area._id),
         name: area.name,

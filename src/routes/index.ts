@@ -7,6 +7,7 @@ import { cleaningPlaceStatusesRouter } from './cleaning-place-statuses.routes.js
 import { cleaningRoomsRouter } from './cleaning-rooms.routes.js'
 import { cleaningTasksRouter } from './cleaning-tasks.routes.js'
 import { dashboardRouter } from './dashboard.routes.js'
+import { officeCallsRouter } from './office-calls.routes.js'
 import { packsRouter } from './packs.routes.js'
 import { rewardsRouter } from './rewards.routes.js'
 import { routinesRouter } from './routines.routes.js'
@@ -26,6 +27,7 @@ router.get('/health', (_request, response) => {
 router.use('/auth', authRouter)
 router.use('/app-state', appStateRouter)
 router.use('/dashboard', dashboardRouter)
+router.use('/office-calls', officeCallsRouter)
 router.use('/volunteers', volunteersRouter)
 router.use('/cleaners', cleanersRouter)
 router.use('/tasks', tasksRouter)

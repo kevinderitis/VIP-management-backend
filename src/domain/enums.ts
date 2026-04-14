@@ -17,6 +17,7 @@ export const ACTIVITY_TYPES = [
   'PACK_ASSIGNED',
   'ROUTINE_ASSIGNED',
   'VOLUNTEER_UPDATED',
+  'OFFICE_CALLED',
 ] as const
 
 export type UserRole = (typeof USER_ROLES)[number]
