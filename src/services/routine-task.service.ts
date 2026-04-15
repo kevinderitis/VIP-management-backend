@@ -202,5 +202,37 @@ export const createRoutineTaskService = () => {
       emitRealtimeEvent('routines:assignment-deleted', { assignmentId })
       return { success: true }
     },
+
+    async reassignAssignment(assignmentId: string, volunteerId: string) {
+      const assignment = await RoutineTaskAssignmentModel.findById(assignmentId)
+      if (!assignment) throw new HttpError(404, 'Recurring assignment not found')
+
+      const volunteer = await UserModel.findById(volunteerId)
+      if (!volunteer || volunteer.role !== 'VOLUNTEER') {
+        throw new HttpError(404, 'Volunteer not found')
+      }
+
+      assignment.volunteerId = volunteer._id
+      await assignment.save()
+
+      await TaskModel.updateMany(
+        { routineAssignmentId: assignment._id, status: { $in: ['ASSIGNED', 'SCHEDULED'] } },
+        {
+          $set: {
+            assignedToId: volunteer._id,
+            lastAssignedToId: volunteer._id,
+          },
+        },
+      )
+
+      await activityService.create(
+        'ROUTINE_ASSIGNED',
+        'Recurring assignment reassigned',
+        `${volunteer.name} is now responsible for the selected recurring assignment.`,
+      )
+
+      emitRealtimeEvent('routines:assignment-reassigned', { assignmentId, volunteerId })
+      return serializeRoutineAssignment(assignment.toObject())
+    },
   }
 }

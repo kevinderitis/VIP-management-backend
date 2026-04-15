@@ -102,4 +102,18 @@ router.delete(
   }),
 )
 
+router.patch(
+  '/assignments/:assignmentId/reassign',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    const payload = z
+      .object({
+        volunteerId: z.string().min(1),
+      })
+      .parse(request.body)
+
+    response.json(await routineService.reassignAssignment(getParam(request.params.assignmentId), payload.volunteerId))
+  }),
+)
+
 export { router as routinesRouter }

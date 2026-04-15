@@ -115,6 +115,14 @@ router.post(
 )
 
 router.post(
+  '/:taskId/unassign',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    response.json(await taskService.unassign(getParam(request.params.taskId), 'VOLUNTEER'))
+  }),
+)
+
+router.post(
   '/:taskId/claim',
   requireRole('VOLUNTEER'),
   asyncHandler(async (request, response) => {

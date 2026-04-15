@@ -314,6 +314,32 @@ export const createTaskService = () => {
       return serializeTask(task.toObject())
     },
 
+    async unassign(taskId: string, audience?: TaskAudience) {
+      const task = await TaskModel.findById(taskId)
+      if (!task) throw new HttpError(404, 'Task not found')
+      if (audience && task.audience !== audience) {
+        throw new HttpError(400, 'Task audience does not match this assignment flow')
+      }
+
+      const previousAssigneeId = task.assignedToId ? String(task.assignedToId) : undefined
+      const previousAssignee = previousAssigneeId ? await UserModel.findById(previousAssigneeId) : null
+
+      task.status = task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'AVAILABLE'
+      task.set('assignedToId', undefined)
+      task.publishedAt = new Date()
+      await task.save()
+
+      await activityService.create(
+        'TASK_RELEASED',
+        `Task unassigned: ${task.title}`,
+        previousAssignee
+          ? `${previousAssignee.name} was removed from this task in assignment control.`
+          : 'This task was returned to the shared board from assignment control.',
+      )
+      emitRealtimeEvent('tasks:updated', { type: 'admin-unassigned', taskId, previousAssigneeId })
+      return serializeTask(task.toObject())
+    },
+
     async claim(taskId: string, userId: string, actorRole: UserRole = 'VOLUNTEER') {
       const task = await TaskModel.findById(taskId)
       if (!task || task.status !== 'AVAILABLE') throw new HttpError(400, 'Task is not available')
