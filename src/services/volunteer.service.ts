@@ -49,6 +49,18 @@ export const createVolunteerService = () => ({
     offDay: Weekday
     badge?: string
   }) {
+    const existingByUsername = await UserModel.findOne({ username: input.username }).lean()
+    if (existingByUsername) {
+      throw new HttpError(409, 'This username is already in use')
+    }
+
+    if (input.email) {
+      const existingByEmail = await UserModel.findOne({ email: input.email }).lean()
+      if (existingByEmail) {
+        throw new HttpError(409, 'This email is already in use')
+      }
+    }
+
     const user = await UserModel.create({
       role: 'VOLUNTEER',
       name: input.name,
@@ -86,6 +98,24 @@ export const createVolunteerService = () => ({
   ) {
     const user = await UserModel.findOne({ _id: userId, role: 'VOLUNTEER' })
     if (!user) throw new HttpError(404, 'Volunteer not found')
+
+    const existingByUsername = await UserModel.findOne({
+      username: input.username,
+      _id: { $ne: userId },
+    }).lean()
+    if (existingByUsername) {
+      throw new HttpError(409, 'This username is already in use')
+    }
+
+    if (input.email) {
+      const existingByEmail = await UserModel.findOne({
+        email: input.email,
+        _id: { $ne: userId },
+      }).lean()
+      if (existingByEmail) {
+        throw new HttpError(409, 'This email is already in use')
+      }
+    }
 
     user.name = input.name
     user.email = input.email || undefined
