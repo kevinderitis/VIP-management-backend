@@ -1,4 +1,5 @@
 import { ActivityModel } from '../models/activity.model.js'
+import { BedConflictModel } from '../models/bed-conflict.model.js'
 import { CleaningAreaModel } from '../models/cleaning-area.model.js'
 import { CleaningPlaceStatusModel } from '../models/cleaning-place-status.model.js'
 import { CleaningRoomModel } from '../models/cleaning-room.model.js'
@@ -13,6 +14,7 @@ import { UserModel } from '../models/user.model.js'
 import { createCleaningRoomService } from './cleaning-room.service.js'
 import {
   serializeActivity,
+  serializeBedConflict,
   serializeCompletion,
   serializeCleaningPlaceStatus,
   serializeCleaningRoom,
@@ -35,7 +37,7 @@ export const createAppStateService = () => ({
     const isAdmin = role === 'ADMIN'
     const isCleaner = role === 'CLEANER'
 
-    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms, officeCalls] =
+    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms, officeCalls, bedConflicts] =
       await Promise.all([
         UserModel.find(
           isAdmin ? {} : isCleaner ? { role: 'CLEANER' } : { role: 'VOLUNTEER' },
@@ -67,6 +69,7 @@ export const createAppStateService = () => ({
         role === 'VOLUNTEER'
           ? OfficeCallModel.find({ volunteerId: userId, status: 'ACTIVE' }).sort({ createdAt: -1 }).lean()
           : Promise.resolve([]),
+        isAdmin ? BedConflictModel.find({ resolvedAt: null }).sort({ createdAt: -1 }).lean() : Promise.resolve([]),
       ])
 
     return {
@@ -81,6 +84,7 @@ export const createAppStateService = () => ({
       redemptions: redemptions.map(serializeRedemption),
       activities: activities.map(serializeActivity),
       officeCalls: officeCalls.map(serializeOfficeCall),
+      bedConflicts: bedConflicts.map(serializeBedConflict),
       cleaningAreas: cleaningAreas.map((area) => ({
         id: String(area._id),
         name: area.name,

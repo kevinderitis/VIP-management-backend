@@ -48,11 +48,26 @@ export const createCleanerService = () => ({
     shift: string
     email?: string
   }) {
+    const normalizedUsername = input.username.trim().toLowerCase()
+    const normalizedEmail = input.email?.trim().toLowerCase()
+
+    const existingByUsername = await UserModel.findOne({ username: normalizedUsername }).lean()
+    if (existingByUsername) {
+      throw new HttpError(409, 'This username is already in use')
+    }
+
+    if (normalizedEmail) {
+      const existingByEmail = await UserModel.findOne({ email: normalizedEmail }).lean()
+      if (existingByEmail) {
+        throw new HttpError(409, 'This email is already in use')
+      }
+    }
+
     const user = await UserModel.create({
       role: 'CLEANER',
       name: input.name,
-      email: input.email || undefined,
-      username: input.username,
+      email: normalizedEmail || undefined,
+      username: normalizedUsername,
       passwordHash: await hashPassword(input.password),
       passwordPreview: input.password,
       avatar: input.name
@@ -86,9 +101,30 @@ export const createCleanerService = () => ({
     const user = await UserModel.findOne({ _id: userId, role: 'CLEANER' })
     if (!user) throw new HttpError(404, 'Cleaner not found')
 
+    const normalizedUsername = input.username.trim().toLowerCase()
+    const normalizedEmail = input.email?.trim().toLowerCase()
+
+    const existingByUsername = await UserModel.findOne({
+      username: normalizedUsername,
+      _id: { $ne: userId },
+    }).lean()
+    if (existingByUsername) {
+      throw new HttpError(409, 'This username is already in use')
+    }
+
+    if (normalizedEmail) {
+      const existingByEmail = await UserModel.findOne({
+        email: normalizedEmail,
+        _id: { $ne: userId },
+      }).lean()
+      if (existingByEmail) {
+        throw new HttpError(409, 'This email is already in use')
+      }
+    }
+
     user.name = input.name
-    user.email = input.email || undefined
-    user.username = input.username
+    user.email = normalizedEmail || undefined
+    user.username = normalizedUsername
     user.title = input.title
     user.shift = input.shift
     if (input.password) {

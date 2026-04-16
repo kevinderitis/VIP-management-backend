@@ -6,8 +6,10 @@ import { serializeUser } from '../utils/serializers.js'
 
 export const createAuthService = () => ({
   async login(identifier: string, password: string) {
+    const normalizedIdentifier = identifier.trim().toLowerCase()
+
     const user = await UserModel.findOne({
-      $or: [{ email: identifier }, { username: identifier }],
+      $or: [{ email: normalizedIdentifier }, { username: normalizedIdentifier }],
     }).lean()
 
     if (!user || !(await comparePassword(password, user.passwordHash))) {

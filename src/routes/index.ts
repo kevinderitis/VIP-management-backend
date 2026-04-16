@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { bedConflictsRouter } from './bed-conflicts.routes.js'
 import { appStateRouter } from './app-state.routes.js'
 import { authRouter } from './auth.routes.js'
 import { cleanersRouter } from './cleaners.routes.js'
@@ -26,6 +27,7 @@ router.get('/health', (_request, response) => {
 
 router.use('/auth', authRouter)
 router.use('/app-state', appStateRouter)
+router.use('/bed-conflicts', bedConflictsRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/office-calls', officeCallsRouter)
 router.use('/volunteers', volunteersRouter)

@@ -22,6 +22,8 @@ const taskSchema = new Schema(
     endsAt: { type: Date },
     notes: { type: String },
     source: { type: String, enum: TASK_SOURCES, required: true },
+    sharedTaskGroupId: { type: String, index: true },
+    volunteerSlots: { type: Number, min: 1, default: 1 },
     assignedToId: { type: Schema.Types.ObjectId, ref: 'User' },
     lastAssignedToId: { type: Schema.Types.ObjectId, ref: 'User' },
     createdById: { type: Schema.Types.ObjectId, ref: 'User', required: true },

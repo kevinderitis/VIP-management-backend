@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import { BED_STATUS_PRESETS, summarizeBeds } from '../domain/cleaning-places.js'
 import { TaskAudience, TaskCategory, TaskPriority, TaskSource, TaskStatus, UserRole } from '../domain/enums.js'
 import { HttpError } from '../lib/http-error.js'
@@ -9,10 +10,14 @@ import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
 import { serializeTask } from '../utils/serializers.js'
 import { createActivityService } from './activity.service.js'
+import { registerBedConflictIfNeeded } from './bed-conflict.service.js'
 
 export const createTaskService = () => {
   const activityService = createActivityService()
   const audienceForRole = (role: UserRole): TaskAudience => (role === 'CLEANER' ? 'CLEANING' : 'VOLUNTEER')
+  const unassignedQuery = () => ({
+    $or: [{ assignedToId: { $exists: false } }, { assignedToId: null }],
+  })
   const updateRoomBedStateFromTask = async (
     task: {
       cleaningRoomNumber?: number | null
@@ -41,6 +46,7 @@ export const createTaskService = () => {
       : [{ bedNumber: 1, label: preset.label, color: preset.color }]
 
     const targetBedNumber = task.cleaningBedNumber ?? 1
+    const previousBed = currentBeds.find((bed) => bed.bedNumber === targetBedNumber)
     const nextBeds = currentBeds.some((bed) => bed.bedNumber === targetBedNumber)
       ? currentBeds.map((bed) =>
           bed.bedNumber === targetBedNumber ? { ...bed, label: preset.label, color: preset.color } : bed,
@@ -79,6 +85,15 @@ export const createTaskService = () => {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     )
+
+    await registerBedConflictIfNeeded({
+      roomCode: task.cleaningRoomCode ?? undefined,
+      roomSection: task.cleaningRoomSection ?? undefined,
+      roomLabel: task.cleaningLocationLabel ?? `Room ${task.cleaningRoomCode ?? task.cleaningRoomNumber}`,
+      bedNumber: targetBedNumber,
+      previousLabel: previousBed?.label,
+      nextLabel: preset.label,
+    })
   }
 
   return {
@@ -125,6 +140,7 @@ export const createTaskService = () => {
       category: TaskCategory
       priority: TaskPriority
       points: number
+      volunteerSlots?: number
       notes?: string
       publishAt?: Date
       startsAt?: Date
@@ -151,8 +167,14 @@ export const createTaskService = () => {
       }
 
       const publishedAt = input.publishAt ?? new Date()
+      const volunteerSlots =
+        input.audience === 'VOLUNTEER' || !input.audience
+          ? Math.max(1, input.volunteerSlots ?? 1)
+          : 1
+      const sharedTaskGroupId =
+        volunteerSlots > 1 ? new mongoose.Types.ObjectId().toString() : undefined
 
-      const task = await TaskModel.create({
+      const baseTask = {
         title: input.title,
         description: input.description,
         category: input.category,
@@ -171,17 +193,27 @@ export const createTaskService = () => {
         cleaningRoomNumber: input.cleaningRoomNumber,
         cleaningRoomCode: input.cleaningRoomCode,
         cleaningRoomSection: input.cleaningRoomSection,
-      })
+        volunteerSlots,
+        sharedTaskGroupId,
+      }
+
+      const createdTasks =
+        volunteerSlots > 1
+          ? await TaskModel.insertMany(Array.from({ length: volunteerSlots }, () => ({ ...baseTask })))
+          : [await TaskModel.create(baseTask)]
+      const primaryTask = createdTasks[0]
 
       await activityService.create(
         'TASK_CREATED',
-        `New task created: ${task.title}`,
-        task.status === 'SCHEDULED'
+        `New task created: ${primaryTask.title}`,
+        primaryTask.status === 'SCHEDULED'
           ? 'It was scheduled for automatic publishing.'
-          : 'It is already available to the volunteer team.',
+          : volunteerSlots > 1
+            ? `It was created with ${volunteerSlots} volunteer slots.`
+            : 'It is already available to the volunteer team.',
       )
-      emitRealtimeEvent('tasks:updated', { type: 'created', taskId: String(task._id) })
-      return serializeTask(task.toObject())
+      emitRealtimeEvent('tasks:updated', { type: 'created', taskId: String(primaryTask._id) })
+      return serializeTask(primaryTask.toObject())
     },
 
     async update(taskId: string, input: {
@@ -190,6 +222,7 @@ export const createTaskService = () => {
       category: TaskCategory
       priority: TaskPriority
       points: number
+      volunteerSlots?: number
       notes?: string
       publishAt?: Date
       startsAt?: Date
@@ -228,15 +261,138 @@ export const createTaskService = () => {
       task.cleaningRoomCode = input.cleaningRoomCode
       task.cleaningRoomSection = input.cleaningRoomSection
       task.publishedAt = nextPublishedAt
-      if (task.source === 'MANUAL') {
-        task.status =
-          task.publishedAt.getTime() > Date.now()
-            ? 'SCHEDULED'
-            : task.assignedToId
-              ? 'ASSIGNED'
-              : 'AVAILABLE'
+      const requestedVolunteerSlots =
+        task.audience === 'VOLUNTEER' ? Math.max(1, input.volunteerSlots ?? task.volunteerSlots ?? 1) : 1
+      const nextStatus =
+        task.publishedAt.getTime() > Date.now()
+          ? 'SCHEDULED'
+          : task.assignedToId
+            ? 'ASSIGNED'
+            : 'AVAILABLE'
+
+      if (task.source === 'MANUAL' && task.sharedTaskGroupId) {
+        const siblingTasks = await TaskModel.find({ sharedTaskGroupId: task.sharedTaskGroupId }).sort({ createdAt: 1 })
+        const lockedTasks = siblingTasks.filter((item) => item.status === 'COMPLETED' || Boolean(item.assignedToId))
+
+        if (requestedVolunteerSlots < lockedTasks.length) {
+          throw new HttpError(
+            400,
+            `You cannot reduce this task below ${lockedTasks.length} slots because some slots are already assigned or completed.`,
+          )
+        }
+
+        if (requestedVolunteerSlots > siblingTasks.length) {
+          const additionalTasks = Array.from({ length: requestedVolunteerSlots - siblingTasks.length }, () => ({
+            title: input.title,
+            description: input.description,
+            category: input.category,
+            priority: input.priority,
+            points: input.points ?? task.points,
+            audience: task.audience,
+            notes: input.notes,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            publishedAt: nextPublishedAt,
+            status: nextPublishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'AVAILABLE',
+            source: task.source,
+            createdById: task.createdById,
+            cleaningLocationType: input.cleaningLocationType,
+            cleaningLocationLabel: input.cleaningLocationLabel,
+            cleaningRoomNumber: input.cleaningRoomNumber,
+            cleaningRoomCode: input.cleaningRoomCode,
+            cleaningRoomSection: input.cleaningRoomSection,
+            volunteerSlots: requestedVolunteerSlots,
+            sharedTaskGroupId: task.sharedTaskGroupId,
+          }))
+          await TaskModel.insertMany(additionalTasks)
+        } else if (requestedVolunteerSlots < siblingTasks.length) {
+          const removableTasks = siblingTasks.filter(
+            (item) => item.status !== 'COMPLETED' && !item.assignedToId,
+          )
+          const removeCount = siblingTasks.length - requestedVolunteerSlots
+          if (removableTasks.length < removeCount) {
+            throw new HttpError(400, 'There are not enough free slots to reduce this task to that number.')
+          }
+          const removableIds = removableTasks.slice(0, removeCount).map((item) => item._id)
+          await TaskModel.deleteMany({ _id: { $in: removableIds } })
+        }
+
+        await TaskModel.updateMany(
+          { sharedTaskGroupId: task.sharedTaskGroupId },
+          {
+            $set: {
+              title: input.title,
+              description: input.description,
+              category: input.category,
+              priority: input.priority,
+              points: input.points ?? task.points,
+              notes: input.notes,
+              startsAt: input.startsAt,
+              endsAt: input.endsAt,
+              cleaningLocationType: input.cleaningLocationType,
+              cleaningLocationLabel: input.cleaningLocationLabel,
+              cleaningRoomNumber: input.cleaningRoomNumber,
+              cleaningRoomCode: input.cleaningRoomCode,
+              cleaningRoomSection: input.cleaningRoomSection,
+              publishedAt: nextPublishedAt,
+              volunteerSlots: requestedVolunteerSlots,
+            },
+          },
+        )
+
+        await TaskModel.updateMany(
+          { sharedTaskGroupId: task.sharedTaskGroupId, ...unassignedQuery() },
+          { $set: { status: nextStatus } },
+        )
+        await TaskModel.updateMany(
+          { sharedTaskGroupId: task.sharedTaskGroupId, assignedToId: { $exists: true } },
+          { $set: { status: task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED' } },
+        )
+        const updated = await TaskModel.findById(taskId).lean()
+        emitRealtimeEvent('tasks:updated', { type: 'updated', taskId })
+        return serializeTask(updated!)
       }
 
+      if (task.source === 'MANUAL' && task.audience === 'VOLUNTEER' && requestedVolunteerSlots > 1) {
+        const sharedTaskGroupId = new mongoose.Types.ObjectId().toString()
+        task.sharedTaskGroupId = sharedTaskGroupId
+        task.volunteerSlots = requestedVolunteerSlots
+        task.status = nextStatus
+        await task.save()
+
+        await TaskModel.insertMany(
+          Array.from({ length: requestedVolunteerSlots - 1 }, () => ({
+            title: input.title,
+            description: input.description,
+            category: input.category,
+            priority: input.priority,
+            points: input.points ?? task.points,
+            audience: task.audience,
+            notes: input.notes,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            publishedAt: nextPublishedAt,
+            status: nextPublishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'AVAILABLE',
+            source: task.source,
+            createdById: task.createdById,
+            cleaningLocationType: input.cleaningLocationType,
+            cleaningLocationLabel: input.cleaningLocationLabel,
+            cleaningRoomNumber: input.cleaningRoomNumber,
+            cleaningRoomCode: input.cleaningRoomCode,
+            cleaningRoomSection: input.cleaningRoomSection,
+            volunteerSlots: requestedVolunteerSlots,
+            sharedTaskGroupId,
+          })),
+        )
+
+        emitRealtimeEvent('tasks:updated', { type: 'updated', taskId })
+        return serializeTask(task.toObject())
+      }
+
+      if (task.source === 'MANUAL') {
+        task.volunteerSlots = requestedVolunteerSlots
+        task.status = nextStatus
+      }
       await task.save()
       emitRealtimeEvent('tasks:updated', { type: 'updated', taskId })
       return serializeTask(task.toObject())
@@ -245,6 +401,24 @@ export const createTaskService = () => {
     async publish(taskId: string) {
       const task = await TaskModel.findById(taskId)
       if (!task) throw new HttpError(404, 'Task not found')
+      if (task.sharedTaskGroupId) {
+        const now = new Date()
+        await TaskModel.updateMany(
+          { sharedTaskGroupId: task.sharedTaskGroupId },
+          [
+            {
+              $set: {
+                status: {
+                  $cond: [{ $ifNull: ['$assignedToId', false] }, 'ASSIGNED', 'AVAILABLE'],
+                },
+                publishedAt: now,
+              },
+            },
+          ],
+        )
+        const updated = await TaskModel.findById(taskId).lean()
+        return serializeTask(updated!)
+      }
       task.status = task.assignedToId ? 'ASSIGNED' : 'AVAILABLE'
       task.publishedAt = new Date()
       await task.save()
@@ -254,6 +428,12 @@ export const createTaskService = () => {
     async toggleCancelled(taskId: string) {
       const task = await TaskModel.findById(taskId)
       if (!task) throw new HttpError(404, 'Task not found')
+      if (task.sharedTaskGroupId) {
+        const nextStatus = task.status === 'CANCELLED' ? 'DRAFT' : 'CANCELLED'
+        await TaskModel.updateMany({ sharedTaskGroupId: task.sharedTaskGroupId }, { $set: { status: nextStatus } })
+        const updated = await TaskModel.findById(taskId).lean()
+        return serializeTask(updated!)
+      }
       task.status = task.status === 'CANCELLED' ? 'DRAFT' : 'CANCELLED'
       await task.save()
       return serializeTask(task.toObject())
@@ -266,20 +446,30 @@ export const createTaskService = () => {
         throw new HttpError(400, 'Task audience does not match this deletion flow')
       }
 
-      if (task.status === 'COMPLETED' && task.assignedToId) {
-        const user = await UserModel.findById(task.assignedToId)
-        if (user) {
-          user.completedTasks = Math.max(0, user.completedTasks - 1)
-          if (task.audience === 'VOLUNTEER') {
-            user.points = Math.max(0, user.points - task.points)
-            user.lifetimePoints = Math.max(0, user.lifetimePoints - task.points)
+      const relatedTasks = task.sharedTaskGroupId
+        ? await TaskModel.find({ sharedTaskGroupId: task.sharedTaskGroupId })
+        : [task]
+
+      for (const relatedTask of relatedTasks) {
+        if (relatedTask.status === 'COMPLETED' && relatedTask.assignedToId) {
+          const user = await UserModel.findById(relatedTask.assignedToId)
+          if (user) {
+            user.completedTasks = Math.max(0, user.completedTasks - 1)
+            if (relatedTask.audience === 'VOLUNTEER') {
+              user.points = Math.max(0, user.points - relatedTask.points)
+              user.lifetimePoints = Math.max(0, user.lifetimePoints - relatedTask.points)
+            }
+            await user.save()
           }
-          await user.save()
         }
       }
 
-      await TaskCompletionModel.deleteMany({ taskId: task._id })
-      await task.deleteOne()
+      await TaskCompletionModel.deleteMany({ taskId: { $in: relatedTasks.map((relatedTask) => relatedTask._id) } })
+      if (task.sharedTaskGroupId) {
+        await TaskModel.deleteMany({ sharedTaskGroupId: task.sharedTaskGroupId })
+      } else {
+        await task.deleteOne()
+      }
       emitRealtimeEvent('tasks:updated', { type: 'deleted', taskId })
       return { success: true }
     },
@@ -300,18 +490,31 @@ export const createTaskService = () => {
         throw new HttpError(404, task.audience === 'CLEANING' ? 'Cleaner not found' : 'Volunteer not found')
       }
 
-      task.assignedToId = assignee._id
-      task.lastAssignedToId = assignee._id
-      task.status = task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED'
-      await task.save()
+      const targetTask =
+        task.sharedTaskGroupId && task.audience === 'VOLUNTEER'
+          ? await TaskModel.findOne({
+              sharedTaskGroupId: task.sharedTaskGroupId,
+              status: { $in: ['AVAILABLE', 'SCHEDULED'] },
+              assignedToId: { $exists: false },
+            }).sort({ createdAt: 1 })
+          : task
+
+      if (!targetTask) {
+        throw new HttpError(400, 'No open slot is available for this task')
+      }
+
+      targetTask.assignedToId = assignee._id
+      targetTask.lastAssignedToId = assignee._id
+      targetTask.status = targetTask.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED'
+      await targetTask.save()
 
       await activityService.create(
         'TASK_TAKEN',
-        `Task assigned: ${task.title}`,
+        `Task assigned: ${targetTask.title}`,
         `${assignee.name} was assigned directly from the admin backoffice.`,
       )
       emitRealtimeEvent('tasks:updated', { type: 'admin-assigned', taskId, assigneeId })
-      return serializeTask(task.toObject())
+      return serializeTask(targetTask.toObject())
     },
 
     async unassign(taskId: string, audience?: TaskAudience) {

@@ -45,6 +45,8 @@ export const serializeTask = (task: DocumentLike) => ({
   createdBy: idOf(task.createdById),
   notes: task.notes,
   source: lower(task.source),
+  sharedTaskGroupId: task.sharedTaskGroupId,
+  volunteerSlots: task.volunteerSlots ?? 1,
   packId: idOf(task.packId),
   packAssignmentId: idOf(task.packAssignmentId),
   routineTemplateId: idOf(task.routineTemplateId),
@@ -88,6 +90,20 @@ export const serializeCleaningRoom = (room: DocumentLike) => ({
   roomType: lower(room.roomType),
   bedCount: room.bedCount,
   isActive: room.isActive,
+})
+
+export const serializeBedConflict = (conflict: DocumentLike) => ({
+  id: idOf(conflict._id),
+  roomCode: conflict.roomCode,
+  roomSection: conflict.roomSection,
+  roomLabel: conflict.roomLabel,
+  bedNumber: conflict.bedNumber,
+  fromLabel: conflict.fromLabel,
+  fromColor: conflict.fromColor,
+  toLabel: conflict.toLabel,
+  toColor: conflict.toColor,
+  createdAt: conflict.createdAt,
+  resolvedAt: conflict.resolvedAt,
 })
 
 export const serializePack = (pack: DocumentLike) => ({

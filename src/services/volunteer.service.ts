@@ -49,13 +49,16 @@ export const createVolunteerService = () => ({
     offDay: Weekday
     badge?: string
   }) {
-    const existingByUsername = await UserModel.findOne({ username: input.username }).lean()
+    const normalizedUsername = input.username.trim().toLowerCase()
+    const normalizedEmail = input.email?.trim().toLowerCase()
+
+    const existingByUsername = await UserModel.findOne({ username: normalizedUsername }).lean()
     if (existingByUsername) {
       throw new HttpError(409, 'This username is already in use')
     }
 
-    if (input.email) {
-      const existingByEmail = await UserModel.findOne({ email: input.email }).lean()
+    if (normalizedEmail) {
+      const existingByEmail = await UserModel.findOne({ email: normalizedEmail }).lean()
       if (existingByEmail) {
         throw new HttpError(409, 'This email is already in use')
       }
@@ -64,8 +67,8 @@ export const createVolunteerService = () => ({
     const user = await UserModel.create({
       role: 'VOLUNTEER',
       name: input.name,
-      email: input.email || undefined,
-      username: input.username,
+      email: normalizedEmail || undefined,
+      username: normalizedUsername,
       passwordHash: await hashPassword(input.password),
       passwordPreview: input.password,
       avatar: input.name
@@ -99,17 +102,20 @@ export const createVolunteerService = () => ({
     const user = await UserModel.findOne({ _id: userId, role: 'VOLUNTEER' })
     if (!user) throw new HttpError(404, 'Volunteer not found')
 
+    const normalizedUsername = input.username.trim().toLowerCase()
+    const normalizedEmail = input.email?.trim().toLowerCase()
+
     const existingByUsername = await UserModel.findOne({
-      username: input.username,
+      username: normalizedUsername,
       _id: { $ne: userId },
     }).lean()
     if (existingByUsername) {
       throw new HttpError(409, 'This username is already in use')
     }
 
-    if (input.email) {
+    if (normalizedEmail) {
       const existingByEmail = await UserModel.findOne({
-        email: input.email,
+        email: normalizedEmail,
         _id: { $ne: userId },
       }).lean()
       if (existingByEmail) {
@@ -118,8 +124,8 @@ export const createVolunteerService = () => ({
     }
 
     user.name = input.name
-    user.email = input.email || undefined
-    user.username = input.username
+    user.email = normalizedEmail || undefined
+    user.username = normalizedUsername
     user.title = input.title
     user.shift = input.shift
     user.offDay = input.offDay

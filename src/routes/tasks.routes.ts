@@ -15,6 +15,7 @@ const taskSchema = z.object({
   category: z.enum(TASK_CATEGORIES),
   priority: z.enum(TASK_PRIORITIES),
   points: z.number().int().positive(),
+  volunteerSlots: z.number().int().min(1).max(20).optional(),
   notes: z.string().optional(),
   publishAt: z.coerce.date().optional(),
   startsAt: z.coerce.date(),

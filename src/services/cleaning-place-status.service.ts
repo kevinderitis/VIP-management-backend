@@ -12,6 +12,7 @@ import { CleaningRoomModel } from '../models/cleaning-room.model.js'
 import { TaskModel } from '../models/task.model.js'
 import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
+import { registerBedConflictIfNeeded } from './bed-conflict.service.js'
 import { serializeCleaningPlaceStatus } from '../utils/serializers.js'
 
 type BedInput = {
@@ -133,6 +134,28 @@ const normalizeBeds = (beds: BedInput[] | undefined, roomType: RoomType, bedCoun
         color: bed.color || preset.color,
       }
     })
+}
+
+const registerBedConflicts = async (input: {
+  roomCode?: string
+  roomSection?: string
+  placeLabel: string
+  previousBeds: BedInput[]
+  nextBeds: BedInput[]
+}) => {
+  if (!input.roomCode) return
+
+  for (const nextBed of input.nextBeds) {
+    const previousBed = input.previousBeds.find((bed) => bed.bedNumber === nextBed.bedNumber)
+    await registerBedConflictIfNeeded({
+      roomCode: input.roomCode,
+      roomSection: input.roomSection,
+      roomLabel: input.placeLabel,
+      bedNumber: nextBed.bedNumber,
+      previousLabel: previousBed?.label,
+      nextLabel: nextBed.label,
+    })
+  }
 }
 
 const syncBedTask = async (input: {
@@ -375,6 +398,20 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
   const roomDefinition = input.roomCode
     ? await CleaningRoomModel.findOne({ code: input.roomCode }).lean()
     : null
+  const existingStatus =
+    (await CleaningPlaceStatusModel.findOne(query).lean()) ??
+    undefined
+  const previousBeds = normalizeBeds(
+    Array.isArray(existingStatus?.beds)
+      ? existingStatus.beds.map((bed) => ({
+          bedNumber: Number(bed.bedNumber),
+          label: String(bed.label),
+          color: String(bed.color),
+        }))
+      : undefined,
+    roomType,
+    roomDefinition?.bedCount,
+  )
   const beds = normalizeBeds(input.beds, roomType, roomDefinition?.bedCount)
   const roomServiceLabel = input.label
   const roomServiceColor = input.color
@@ -401,6 +438,14 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
   )
 
   if (!status) throw new HttpError(500, 'Could not save room status')
+
+  await registerBedConflicts({
+    roomCode: input.roomCode,
+    roomSection: input.roomSection,
+    placeLabel: input.placeLabel,
+    previousBeds,
+    nextBeds: beds,
+  })
 
   await syncRoomBedTasks({
     roomNumber: input.roomNumber,
@@ -534,6 +579,14 @@ export const createCleaningPlaceStatusService = () => ({
       )
 
       if (!status) throw new HttpError(500, `Could not save status for room ${selection.roomCode}`)
+
+      await registerBedConflicts({
+        roomCode: selection.roomCode,
+        roomSection: selection.roomSection,
+        placeLabel: selection.placeLabel,
+        previousBeds: currentBeds,
+        nextBeds,
+      })
 
       await syncRoomBedTasks({
         roomCode: selection.roomCode,
