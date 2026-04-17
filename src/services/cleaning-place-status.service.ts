@@ -32,6 +32,7 @@ type UpsertInput = {
   label: string
   color: string
   beds?: BedInput[]
+  trashRequested?: boolean
   assignCleanerId?: string
   assignVolunteerId?: string
   applyVolunteerAssignment?: boolean
@@ -59,6 +60,8 @@ const activeBedStateKeys = new Set<BedStateKey>(['NEEDS_MAKING', 'CHECK'])
 const bedStateRequiresTask = (stateKey?: BedStateKey) => Boolean(stateKey && activeBedStateKeys.has(stateKey))
 
 const roomTitle = (roomCode?: string, roomNumber?: number) => `Room ${roomCode ?? roomNumber}`
+const roomBedReference = (roomCode?: string, roomNumber?: number, bedNumber?: number) =>
+  bedNumber ? `Room ${roomCode ?? roomNumber}-${bedNumber}` : roomTitle(roomCode, roomNumber)
 const needsCleaningRequest = (value?: string) => cleaningRequestLabels.includes(value?.trim().toLowerCase() ?? '')
 const bedKeyFor = (roomType: RoomType, bedNumber?: number) => (roomType === 'PRIVATE' ? 'private' : String(bedNumber))
 
@@ -84,10 +87,11 @@ const buildBedTaskCopy = (input: {
   stateKey: BedStateKey
 }) => {
   const roomLabel = roomTitle(input.roomCode, input.roomNumber)
+  const bedReference = roomBedReference(input.roomCode, input.roomNumber, input.bedNumber)
 
   if (input.stateKey === 'CHECK') {
     return {
-      title: input.bedNumber ? `Check bed · ${roomLabel} · Bed ${input.bedNumber}` : `Check bed · ${roomLabel}`,
+      title: `${bedReference} · Check bed`,
       description: input.bedNumber
         ? `Inspect bed ${input.bedNumber} in ${roomLabel}. Verify linen, occupancy, and bed presentation, then mark it as ready or occupied when the check is complete.`
         : `Inspect the bed in private ${roomLabel}. Verify linen and occupancy, then mark it as ready or occupied when the check is complete.`,
@@ -95,10 +99,18 @@ const buildBedTaskCopy = (input: {
   }
 
   return {
-    title: input.bedNumber ? `Make bed · ${roomLabel} · Bed ${input.bedNumber}` : `Make bed · ${roomLabel}`,
+    title: `${bedReference} · Make bed`,
     description: input.bedNumber
       ? `Prepare bed ${input.bedNumber} in ${roomLabel}. Replace linen, tidy pillows, and leave the bed ready for the next guest.`
       : `Make the bed in private ${roomLabel}, refresh the linen setup, and leave the room ready for the next guest.`,
+  }
+}
+
+const buildTrashTaskCopy = (input: { roomCode?: string; roomNumber?: number }) => {
+  const roomLabel = roomTitle(input.roomCode, input.roomNumber)
+  return {
+    title: `${roomLabel} · Take out trash`,
+    description: `Collect the trash in ${roomLabel}, replace the liner if needed, and leave the room clean and ready for the next guest.`,
   }
 }
 
@@ -166,6 +178,7 @@ const syncBedTask = async (input: {
   placeLabel: string
   adminUserId: string
   bedStateKey: BedStateKey
+  points: number
   shouldBeActive: boolean
   assignmentAction?: {
     volunteerId?: string
@@ -208,6 +221,8 @@ const syncBedTask = async (input: {
   if (existingTask) {
     existingTask.title = title
     existingTask.description = description
+    existingTask.points = input.points
+    existingTask.roomTaskType = input.bedStateKey === 'CHECK' ? 'CHECK' : 'BED_MAKING'
     existingTask.publishedAt = new Date()
     if (input.assignmentAction) {
       if (input.assignmentAction.volunteerId) {
@@ -231,7 +246,7 @@ const syncBedTask = async (input: {
     category: 'HOUSEKEEPING',
     priority: 'MEDIUM',
     audience: 'VOLUNTEER',
-    points: 10,
+    points: input.points,
     publishedAt: startsAt,
     startsAt,
     endsAt,
@@ -246,7 +261,108 @@ const syncBedTask = async (input: {
     cleaningRoomSection: input.roomSection,
     cleaningBedNumber: input.bedNumber,
     bedTask: true,
+    roomTaskType: input.bedStateKey === 'CHECK' ? 'CHECK' : 'BED_MAKING',
     status: input.assignmentAction?.volunteerId ? 'ASSIGNED' : 'AVAILABLE',
+  })
+}
+
+const syncTrashTask = async (input: {
+  roomNumber?: number
+  roomCode?: string
+  roomSection?: string
+  placeLabel: string
+  adminUserId: string
+  points: number
+  trashRequested: boolean
+  assignVolunteerId?: string
+}) => {
+  const taskQuery = {
+    audience: 'VOLUNTEER',
+    cleaningLocationType: 'ROOM',
+    ...(input.roomCode ? { cleaningRoomCode: input.roomCode } : { cleaningRoomNumber: input.roomNumber }),
+    status: { $in: REUSABLE_BED_TASK_STATUSES },
+    $or: [
+      { roomTaskType: 'TRASH' },
+      {
+        bedTask: false,
+        title: { $regex: 'trash|take out trash|garbage', $options: 'i' },
+      },
+      {
+        bedTask: false,
+        description: { $regex: 'trash|garbage|liner', $options: 'i' },
+      },
+    ],
+  }
+  const existingTasks = await TaskModel.find(taskQuery).sort({ createdAt: -1 })
+  const existingTask = existingTasks[0]
+
+  if (!input.trashRequested) {
+    for (const task of existingTasks) {
+      if (task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
+        task.status = 'CANCELLED'
+        task.set('assignedToId', undefined)
+        task.roomTaskType = 'TRASH'
+        await task.save()
+      }
+    }
+    return
+  }
+
+  const { title, description } = buildTrashTaskCopy({
+    roomCode: input.roomCode,
+    roomNumber: input.roomNumber,
+  })
+
+  if (existingTask) {
+    existingTask.title = title
+    existingTask.description = description
+    existingTask.points = input.points
+    existingTask.roomTaskType = 'TRASH'
+    existingTask.publishedAt = new Date()
+    if (input.assignVolunteerId) {
+      existingTask.set('assignedToId', input.assignVolunteerId)
+      existingTask.set('lastAssignedToId', input.assignVolunteerId)
+    } else {
+      existingTask.set('assignedToId', undefined)
+    }
+    existingTask.status = existingTask.assignedToId ? 'ASSIGNED' : 'AVAILABLE'
+    await existingTask.save()
+
+    for (const duplicateTask of existingTasks.slice(1)) {
+      if (duplicateTask.status !== 'COMPLETED' && duplicateTask.status !== 'CANCELLED') {
+        duplicateTask.status = 'CANCELLED'
+        duplicateTask.set('assignedToId', undefined)
+        duplicateTask.roomTaskType = 'TRASH'
+        await duplicateTask.save()
+      }
+    }
+    return
+  }
+
+  const startsAt = new Date()
+  const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
+  await TaskModel.create({
+    title,
+    description,
+    category: 'HOUSEKEEPING',
+    priority: 'MEDIUM',
+    audience: 'VOLUNTEER',
+    points: input.points,
+    publishedAt: startsAt,
+    startsAt,
+    endsAt,
+    source: 'MANUAL',
+    createdById: input.adminUserId,
+    assignedToId: input.assignVolunteerId,
+    lastAssignedToId: input.assignVolunteerId,
+    cleaningLocationType: 'ROOM',
+    cleaningLocationLabel: input.placeLabel,
+    cleaningRoomNumber: input.roomNumber,
+    cleaningRoomCode: input.roomCode,
+    cleaningRoomSection: input.roomSection,
+    roomTaskType: 'TRASH',
+    bedTask: false,
+    status: input.assignVolunteerId ? 'ASSIGNED' : 'AVAILABLE',
   })
 }
 
@@ -261,6 +377,10 @@ const syncRoomBedTasks = async (input: {
   assignVolunteerId?: string
   applyVolunteerAssignment?: boolean
   assignmentBedKeys?: Set<string>
+  trashRequested?: boolean
+  bedTaskPoints: number
+  checkTaskPoints: number
+  trashTaskPoints: number
 }) => {
   const expectedActiveKeys = new Set(
     input.beds
@@ -303,6 +423,7 @@ const syncRoomBedTasks = async (input: {
       placeLabel: input.placeLabel,
       adminUserId: input.adminUserId,
       bedStateKey: stateKey,
+      points: stateKey === 'CHECK' ? input.checkTaskPoints : input.bedTaskPoints,
       assignmentAction:
         shouldKeepTaskActive && shouldApplyAssignment
           ? { volunteerId: input.assignVolunteerId }
@@ -310,6 +431,17 @@ const syncRoomBedTasks = async (input: {
       shouldBeActive: shouldKeepTaskActive,
     })
   }
+
+  await syncTrashTask({
+    roomNumber: input.roomNumber,
+    roomCode: input.roomCode,
+    roomSection: input.roomSection,
+    placeLabel: input.placeLabel,
+    adminUserId: input.adminUserId,
+    points: input.trashTaskPoints,
+    trashRequested: Boolean(input.trashRequested),
+    assignVolunteerId: input.assignVolunteerId,
+  })
 }
 
 const syncCleaningServiceTask = async (input: {
@@ -320,6 +452,7 @@ const syncCleaningServiceTask = async (input: {
   placeLabel: string
   adminUserId: string
   assignCleanerId?: string
+  shouldBeActive?: boolean
 }) => {
   const autoTitle = input.placeType === 'ROOM' ? `Clean ${roomTitle(input.roomCode, input.roomNumber)}` : `Clean ${input.placeLabel}`
   const autoDescription =
@@ -337,6 +470,15 @@ const syncCleaningServiceTask = async (input: {
       : { cleaningLocationLabel: input.placeLabel }),
     status: { $in: ACTIVE_TASK_STATUSES },
   }).sort({ createdAt: -1 })
+
+  if (input.shouldBeActive === false) {
+    if (existingTask) {
+      existingTask.status = 'CANCELLED'
+      existingTask.set('assignedToId', undefined)
+      await existingTask.save()
+    }
+    return
+  }
 
   if (existingTask) {
     existingTask.title = autoTitle
@@ -415,6 +557,7 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
   const beds = normalizeBeds(input.beds, roomType, roomDefinition?.bedCount)
   const roomServiceLabel = input.label
   const roomServiceColor = input.color
+  const trashRequested = Boolean(input.trashRequested ?? existingStatus?.trashRequested)
   const summary =
     roomType === 'SHARED'
       ? deriveBoardStatus({ roomServiceLabel, roomServiceColor, beds })
@@ -432,6 +575,7 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
       color: summary.color,
       roomServiceLabel,
       roomServiceColor,
+      trashRequested,
       beds,
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -457,6 +601,10 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
     adminUserId: input.adminUserId,
     assignVolunteerId: volunteerAssigneeId,
     applyVolunteerAssignment: input.applyVolunteerAssignment,
+    trashRequested,
+    bedTaskPoints: roomDefinition?.bedTaskPoints ?? 10,
+    checkTaskPoints: roomDefinition?.checkTaskPoints ?? 10,
+    trashTaskPoints: roomDefinition?.trashTaskPoints ?? 10,
   })
 
   if (needsCleaningRequest(input.label)) {
@@ -468,6 +616,17 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
       placeLabel: input.placeLabel,
       adminUserId: input.adminUserId,
       assignCleanerId: cleanerAssigneeId,
+      shouldBeActive: true,
+    })
+  } else {
+    await syncCleaningServiceTask({
+      placeType: 'ROOM',
+      roomNumber: input.roomNumber,
+      roomCode: input.roomCode,
+      roomSection: input.roomSection,
+      placeLabel: input.placeLabel,
+      adminUserId: input.adminUserId,
+      shouldBeActive: false,
     })
   }
 
@@ -512,14 +671,13 @@ export const createCleaningPlaceStatusService = () => ({
     if (!status) throw new HttpError(500, 'Could not save cleaning place status')
 
     const normalizedLabel = input.label.trim().toLowerCase()
-    if (normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning') {
-      await syncCleaningServiceTask({
-        placeType: 'CUSTOM',
-        placeLabel: input.placeLabel,
-        adminUserId: input.adminUserId,
-        assignCleanerId: cleanerAssigneeId,
-      })
-    }
+    await syncCleaningServiceTask({
+      placeType: 'CUSTOM',
+      placeLabel: input.placeLabel,
+      adminUserId: input.adminUserId,
+      assignCleanerId: normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning' ? cleanerAssigneeId : undefined,
+      shouldBeActive: normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning',
+    })
 
     emitRealtimeEvent('tasks:updated', { type: 'cleaning-place-updated', placeLabel: input.placeLabel })
     return serializeCleaningPlaceStatus(status.toObject())
@@ -531,6 +689,7 @@ export const createCleaningPlaceStatusService = () => ({
     const results = []
 
     for (const selection of input.selections) {
+      const roomDefinition = await CleaningRoomModel.findOne({ code: selection.roomCode }).lean()
       const existingStatus = await CleaningPlaceStatusModel.findOne({
         placeType: 'ROOM',
         roomCode: selection.roomCode,
@@ -545,7 +704,7 @@ export const createCleaningPlaceStatusService = () => ({
             }))
           : undefined,
         selection.roomType,
-        (await CleaningRoomModel.findOne({ code: selection.roomCode }).lean())?.bedCount,
+        roomDefinition?.bedCount,
       )
 
       const selectedSet = new Set(selection.bedNumbers.map(String))
@@ -573,6 +732,7 @@ export const createCleaningPlaceStatusService = () => ({
           color: summary.color,
           roomServiceLabel,
           roomServiceColor,
+          trashRequested: Boolean(existingStatus?.trashRequested),
           beds: nextBeds,
         },
         { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -601,6 +761,10 @@ export const createCleaningPlaceStatusService = () => ({
             bedKeyFor(selection.roomType, selection.roomType === 'PRIVATE' ? undefined : bedNumber),
           ),
         ),
+        trashRequested: Boolean(existingStatus?.trashRequested),
+        bedTaskPoints: roomDefinition?.bedTaskPoints ?? 10,
+        checkTaskPoints: roomDefinition?.checkTaskPoints ?? 10,
+        trashTaskPoints: roomDefinition?.trashTaskPoints ?? 10,
       })
 
       results.push(serializeCleaningPlaceStatus(status.toObject()))

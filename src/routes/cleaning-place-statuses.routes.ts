@@ -19,6 +19,7 @@ const payloadSchema = z.object({
   placeLabel: z.string().min(1),
   label: z.string().min(1),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  trashRequested: z.boolean().optional(),
   beds: z
     .array(
       z.object({

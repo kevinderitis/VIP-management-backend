@@ -24,6 +24,9 @@ export const createCleaningRoomService = () => ({
     section: string
     roomType: 'PRIVATE' | 'SHARED'
     bedCount: number
+    bedTaskPoints?: number
+    checkTaskPoints?: number
+    trashTaskPoints?: number
   }) {
     const code = input.code.trim()
     const section = input.section.trim()
@@ -35,6 +38,9 @@ export const createCleaningRoomService = () => ({
       label: `Room ${code}`,
       roomType: input.roomType,
       bedCount: input.roomType === 'PRIVATE' ? 1 : input.bedCount,
+      bedTaskPoints: input.bedTaskPoints ?? 10,
+      checkTaskPoints: input.checkTaskPoints ?? 10,
+      trashTaskPoints: input.trashTaskPoints ?? 10,
       isActive: true,
     })
 
@@ -48,6 +54,9 @@ export const createCleaningRoomService = () => ({
       section: string
       roomType: 'PRIVATE' | 'SHARED'
       bedCount: number
+      bedTaskPoints?: number
+      checkTaskPoints?: number
+      trashTaskPoints?: number
       isActive?: boolean
     },
   ) {
@@ -60,6 +69,9 @@ export const createCleaningRoomService = () => ({
     room.label = `Room ${room.code}`
     room.roomType = input.roomType
     room.bedCount = input.roomType === 'PRIVATE' ? 1 : input.bedCount
+    room.bedTaskPoints = input.bedTaskPoints ?? room.bedTaskPoints ?? 10
+    room.checkTaskPoints = input.checkTaskPoints ?? room.checkTaskPoints ?? 10
+    room.trashTaskPoints = input.trashTaskPoints ?? room.trashTaskPoints ?? 10
     if (typeof input.isActive === 'boolean') room.isActive = input.isActive
     await room.save()
 

@@ -4,6 +4,7 @@ import { TaskAudience, TaskCategory, TaskPriority, TaskSource, TaskStatus, UserR
 import { HttpError } from '../lib/http-error.js'
 import { CleaningAreaModel } from '../models/cleaning-area.model.js'
 import { CleaningPlaceStatusModel } from '../models/cleaning-place-status.model.js'
+import { RoomCompletionBonusModel } from '../models/room-completion-bonus.model.js'
 import { TaskCompletionModel } from '../models/task-completion.model.js'
 import { TaskModel } from '../models/task.model.js'
 import { UserModel } from '../models/user.model.js'
@@ -18,6 +19,10 @@ export const createTaskService = () => {
   const unassignedQuery = () => ({
     $or: [{ assignedToId: { $exists: false } }, { assignedToId: null }],
   })
+  const roomDateKey = (value?: Date | null) => {
+    const source = value ?? new Date()
+    return new Date(source).toISOString().slice(0, 10)
+  }
   const updateRoomBedStateFromTask = async (
     task: {
       cleaningRoomNumber?: number | null
@@ -81,6 +86,7 @@ export const createTaskService = () => {
         color: roomSummary?.color ?? existingStatus?.color ?? '#22c55e',
         roomServiceLabel: existingStatus?.roomServiceLabel,
         roomServiceColor: existingStatus?.roomServiceColor,
+        trashRequested: Boolean(existingStatus?.trashRequested),
         beds: nextBeds,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -596,6 +602,16 @@ export const createTaskService = () => {
         throw new HttpError(400, 'A resulting bed state is required for bed-making tasks')
       }
 
+      const activeRoomTasksBefore =
+        actorRole === 'VOLUNTEER' && task.cleaningLocationType === 'ROOM' && task.cleaningRoomCode
+          ? await TaskModel.find({
+              audience: 'VOLUNTEER',
+              cleaningLocationType: 'ROOM',
+              cleaningRoomCode: task.cleaningRoomCode,
+              status: { $in: ['ASSIGNED', 'AVAILABLE', 'SCHEDULED'] },
+            }).lean()
+          : []
+
       task.status = 'COMPLETED'
       await task.save()
 
@@ -647,6 +663,7 @@ export const createTaskService = () => {
               color: roomSummary?.color ?? '#22c55e',
               roomServiceLabel: 'Clean',
               roomServiceColor: '#22c55e',
+              trashRequested: Boolean(existingStatus?.trashRequested),
               beds: currentBeds,
             },
             { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -682,6 +699,49 @@ export const createTaskService = () => {
 
       if (actorRole === 'VOLUNTEER' && task.bedTask && resultingBedState) {
         await updateRoomBedStateFromTask(task, resultingBedState)
+      }
+
+      if (actorRole === 'VOLUNTEER' && task.cleaningLocationType === 'ROOM' && task.cleaningRoomCode) {
+        const roomWasFullyAssignedToSameVolunteer =
+          activeRoomTasksBefore.length > 0 &&
+          activeRoomTasksBefore.every(
+            (roomTask) => roomTask.assignedToId && String(roomTask.assignedToId) === userId,
+          )
+
+        const remainingActiveRoomTasks = await TaskModel.countDocuments({
+          audience: 'VOLUNTEER',
+          cleaningLocationType: 'ROOM',
+          cleaningRoomCode: task.cleaningRoomCode,
+          status: { $in: ['ASSIGNED', 'AVAILABLE', 'SCHEDULED'] },
+        })
+
+        if (roomWasFullyAssignedToSameVolunteer && remainingActiveRoomTasks === 0) {
+          const bonusDateKey = roomDateKey(task.startsAt ?? task.publishedAt)
+          const existingBonus = await RoomCompletionBonusModel.findOne({
+            volunteerId: user._id,
+            roomCode: task.cleaningRoomCode,
+            dateKey: bonusDateKey,
+          }).lean()
+
+          if (!existingBonus) {
+            await RoomCompletionBonusModel.create({
+              volunteerId: user._id,
+              roomCode: task.cleaningRoomCode,
+              dateKey: bonusDateKey,
+              points: 10,
+            })
+
+            user.points += 10
+            user.lifetimePoints += 10
+            await user.save()
+
+            await activityService.create(
+              'TASK_COMPLETED',
+              `Room completed: ${task.cleaningRoomCode}`,
+              `${user.name} earned an extra 10 points for finishing the full room assignment.`,
+            )
+          }
+        }
       }
 
       await activityService.create(

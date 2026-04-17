@@ -14,6 +14,9 @@ const payloadSchema = z.object({
   section: z.string().min(1),
   roomType: z.enum(ROOM_TYPES),
   bedCount: z.number().int().min(1).max(14),
+  bedTaskPoints: z.number().int().min(1).max(100).optional(),
+  checkTaskPoints: z.number().int().min(1).max(100).optional(),
+  trashTaskPoints: z.number().int().min(1).max(100).optional(),
   isActive: z.boolean().optional(),
 })
 

@@ -24,6 +24,7 @@ const cleaningPlaceStatusSchema = new Schema(
     color: { type: String, required: true },
     roomServiceLabel: { type: String },
     roomServiceColor: { type: String },
+    trashRequested: { type: Boolean, default: false },
     beds: { type: [bedStatusSchema], default: undefined },
   },
   { timestamps: true },

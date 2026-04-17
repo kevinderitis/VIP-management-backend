@@ -38,6 +38,7 @@ const taskSchema = new Schema(
     cleaningRoomSection: { type: String },
     cleaningBedNumber: { type: Number, min: 1, max: 24 },
     bedTask: { type: Boolean, default: false },
+    roomTaskType: { type: String, enum: ['BED_MAKING', 'CHECK', 'TRASH'] },
   },
   { timestamps: true },
 )

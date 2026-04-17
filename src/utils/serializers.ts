@@ -58,6 +58,7 @@ export const serializeTask = (task: DocumentLike) => ({
   cleaningRoomSection: task.cleaningRoomSection,
   cleaningBedNumber: task.cleaningBedNumber,
   bedTask: Boolean(task.bedTask),
+  roomTaskType: lower(task.roomTaskType),
 })
 
 export const serializeCleaningPlaceStatus = (status: DocumentLike) => ({
@@ -73,6 +74,7 @@ export const serializeCleaningPlaceStatus = (status: DocumentLike) => ({
   color: status.color,
   roomServiceLabel: status.roomServiceLabel,
   roomServiceColor: status.roomServiceColor,
+  trashRequested: Boolean(status.trashRequested),
   beds: Array.isArray(status.beds)
     ? status.beds.map((bed: Record<string, unknown>) => ({
         bedNumber: bed.bedNumber,
@@ -89,6 +91,9 @@ export const serializeCleaningRoom = (room: DocumentLike) => ({
   label: room.label,
   roomType: lower(room.roomType),
   bedCount: room.bedCount,
+  bedTaskPoints: room.bedTaskPoints ?? 10,
+  checkTaskPoints: room.checkTaskPoints ?? 10,
+  trashTaskPoints: room.trashTaskPoints ?? 10,
   isActive: room.isActive,
 })
 

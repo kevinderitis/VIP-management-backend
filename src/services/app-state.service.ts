@@ -62,7 +62,7 @@ export const createAppStateService = () => ({
         isCleaner
           ? Promise.resolve([])
           : RedemptionModel.find(isAdmin ? {} : { volunteerId: userId }).sort({ createdAt: -1 }).lean(),
-        ActivityModel.find().sort({ createdAt: -1 }).limit(24).lean(),
+        ActivityModel.find().sort({ createdAt: -1 }).limit(200).lean(),
         CleaningAreaModel.find().sort({ name: 1 }).lean(),
         CleaningPlaceStatusModel.find().sort({ updatedAt: -1 }).lean(),
         CleaningRoomModel.find().sort({ section: 1, code: 1 }).lean(),
