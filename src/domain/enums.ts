@@ -6,7 +6,7 @@ export const TASK_CATEGORIES = ['HOUSEKEEPING', 'RECEPTION', 'KITCHEN', 'MAINTEN
 export const TASK_SOURCES = ['MANUAL', 'PACK', 'ROUTINE'] as const
 export const TASK_AUDIENCES = ['VOLUNTEER', 'CLEANING'] as const
 export const CLEANING_LOCATION_TYPES = ['ROOM', 'CUSTOM'] as const
-export const REDEMPTION_STATUSES = ['COMPLETED'] as const
+export const REDEMPTION_STATUSES = ['COMPLETED', 'DELIVERED'] as const
 export const ACTIVITY_TYPES = [
   'TASK_CREATED',
   'TASK_PUBLISHED',

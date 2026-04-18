@@ -45,6 +45,35 @@ export const createTaskService = () => {
     const source = value ?? new Date()
     return new Date(source).toISOString().slice(0, 10)
   }
+  const revertRoomCompletionBonus = async (input: {
+    volunteerId: string
+    task: {
+      cleaningLocationType?: string | null
+      cleaningRoomCode?: string | null
+      startsAt?: Date | null
+      publishedAt?: Date | null
+    }
+  }) => {
+    if (input.task.cleaningLocationType !== 'ROOM' || !input.task.cleaningRoomCode) return
+
+    const dateKey = roomDateKey(input.task.startsAt ?? input.task.publishedAt)
+    const bonus = await RoomCompletionBonusModel.findOne({
+      volunteerId: input.volunteerId,
+      roomCode: input.task.cleaningRoomCode,
+      dateKey,
+    })
+
+    if (!bonus) return
+
+    const user = await UserModel.findById(input.volunteerId)
+    if (user) {
+      user.points = Math.max(0, user.points - bonus.points)
+      user.lifetimePoints = Math.max(0, user.lifetimePoints - bonus.points)
+      await user.save()
+    }
+
+    await bonus.deleteOne()
+  }
   const updateRoomBedStateFromTask = async (
     task: {
       cleaningRoomNumber?: number | null
@@ -674,7 +703,10 @@ export const createTaskService = () => {
       await TaskCompletionModel.create({
         taskId: task._id,
         volunteerId: userId,
+        taskTitle: task.title,
+        taskDescription: task.description,
         points: task.points,
+        status: 'COMPLETED',
         source: task.source,
         routineTemplateId: task.routineTemplateId,
         packId: task.packId,
@@ -802,6 +834,50 @@ export const createTaskService = () => {
       )
       emitRealtimeEvent('tasks:updated', { type: 'completed', taskId })
       return serializeTask(task.toObject())
+    },
+
+    async revertCompletion(completionId: string, adminUserId: string) {
+      const completion = await TaskCompletionModel.findById(completionId)
+      if (!completion) throw new HttpError(404, 'Task completion record not found')
+      if (completion.status === 'CANCELLED') throw new HttpError(400, 'This task completion was already reverted')
+
+      const [task, volunteer] = await Promise.all([
+        TaskModel.findById(completion.taskId),
+        UserModel.findById(completion.volunteerId),
+      ])
+
+      if (!task) throw new HttpError(404, 'Related task not found')
+      if (!volunteer) throw new HttpError(404, 'Volunteer not found')
+
+      volunteer.completedTasks = Math.max(0, volunteer.completedTasks - 1)
+      if (task.audience === 'VOLUNTEER') {
+        volunteer.points = Math.max(0, volunteer.points - completion.points)
+        volunteer.lifetimePoints = Math.max(0, volunteer.lifetimePoints - completion.points)
+      }
+      await volunteer.save()
+
+      await revertRoomCompletionBonus({
+        volunteerId: String(volunteer._id),
+        task,
+      })
+
+      task.status = 'CANCELLED'
+      task.set('assignedToId', undefined)
+      await task.save()
+
+      completion.status = 'CANCELLED'
+      completion.reversedAt = new Date()
+      completion.reversedById = new mongoose.Types.ObjectId(adminUserId)
+      await completion.save()
+
+      await activityService.create(
+        'TASK_COMPLETED',
+        `Task completion reverted: ${completion.taskTitle}`,
+        `${volunteer.name} had the awarded points reverted and the task was marked as cancelled.`,
+      )
+
+      emitRealtimeEvent('tasks:updated', { type: 'completion-reverted', taskId: String(task._id) })
+      return { success: true }
     },
 
     async runScheduler() {

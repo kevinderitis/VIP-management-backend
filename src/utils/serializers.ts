@@ -184,6 +184,8 @@ export const serializeRedemption = (redemption: DocumentLike) => ({
   cost: redemption.cost,
   status: lower(redemption.status),
   createdAt: redemption.createdAt,
+  deliveredAt: redemption.deliveredAt,
+  deliveredBy: idOf(redemption.deliveredById),
 })
 
 export const serializeActivity = (activity: DocumentLike) => ({
@@ -209,8 +211,13 @@ export const serializeCompletion = (completion: DocumentLike) => ({
   id: idOf(completion._id),
   taskId: idOf(completion.taskId),
   volunteerId: idOf(completion.volunteerId),
+  taskTitle: completion.taskTitle,
+  taskDescription: completion.taskDescription,
   points: completion.points,
+  status: lower(completion.status) ?? 'completed',
   completedAt: completion.completedAt,
+  reversedAt: completion.reversedAt,
+  reversedBy: idOf(completion.reversedById),
   source:
     lower(completion.source) ??
     (completion.routineTemplateId ? 'routine' : completion.packId ? 'pack' : 'manual'),

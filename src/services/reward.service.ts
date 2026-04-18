@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import { HttpError } from '../lib/http-error.js'
 import { RedemptionModel, RewardModel } from '../models/reward.model.js'
 import { UserModel } from '../models/user.model.js'
@@ -110,6 +111,27 @@ export const createRewardService = () => {
     async redemptions() {
       const redemptions = await RedemptionModel.find().sort({ createdAt: -1 }).lean()
       return redemptions.map(serializeRedemption)
+    },
+
+    async confirmDelivered(redemptionId: string, adminUserId: string) {
+      const redemption = await RedemptionModel.findById(redemptionId)
+      if (!redemption) throw new HttpError(404, 'Redemption not found')
+      if (redemption.status === 'DELIVERED') {
+        return serializeRedemption(redemption.toObject())
+      }
+
+      redemption.status = 'DELIVERED'
+      redemption.deliveredAt = new Date()
+      redemption.deliveredById = new mongoose.Types.ObjectId(adminUserId)
+      await redemption.save()
+
+      await activityService.create(
+        'REWARD_REDEEMED',
+        'Reward delivery confirmed',
+        `A reward redemption was marked as delivered.`,
+      )
+
+      return serializeRedemption(redemption.toObject())
     },
   }
 }

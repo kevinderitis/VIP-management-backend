@@ -20,6 +20,8 @@ const redemptionSchema = new Schema(
     volunteerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     cost: { type: Number, required: true },
     status: { type: String, enum: REDEMPTION_STATUSES, default: 'COMPLETED' },
+    deliveredAt: { type: Date },
+    deliveredById: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 )

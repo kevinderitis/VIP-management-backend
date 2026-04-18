@@ -102,6 +102,14 @@ router.delete(
 )
 
 router.post(
+  '/completions/:completionId/revert',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    response.json(await taskService.revertCompletion(getParam(request.params.completionId), request.auth!.userId))
+  }),
+)
+
+router.post(
   '/:taskId/assign',
   requireRole('ADMIN'),
   asyncHandler(async (request, response) => {

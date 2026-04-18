@@ -34,6 +34,14 @@ router.get(
 )
 
 router.post(
+  '/redemptions/:redemptionId/confirm-delivered',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    response.json(await rewardService.confirmDelivered(getParam(request.params.redemptionId), request.auth!.userId))
+  }),
+)
+
+router.post(
   '/',
   requireRole('ADMIN'),
   asyncHandler(async (request, response) => {
