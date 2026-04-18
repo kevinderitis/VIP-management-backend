@@ -5,7 +5,7 @@ import { TaskCompletionModel } from '../models/task-completion.model.js'
 import { TaskModel } from '../models/task.model.js'
 import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
-import { combineDateAndTime } from '../utils/date.js'
+import { addThailandDays, combineDateAndTime, getThailandWeekday, startOfThailandDay } from '../utils/date.js'
 import { serializeRoutineAssignment, serializeRoutineTask } from '../utils/serializers.js'
 import { createActivityService } from './activity.service.js'
 import { sendPushNotificationsToUsers } from './push-notification.service.js'
@@ -21,18 +21,16 @@ const weekdayIndexes: Record<Weekday, number> = {
 }
 
 const weekdayFromDate = (date: Date) =>
-  (Object.keys(weekdayIndexes) as Weekday[]).find((weekday) => weekdayIndexes[weekday] === date.getDay())
+  (Object.keys(weekdayIndexes) as Weekday[]).find((weekday) => weekdayIndexes[weekday] === getThailandWeekday(date))
 
 const eachDateInRange = (startsOn: Date, endsOn: Date) => {
   const dates: Date[] = []
-  const cursor = new Date(startsOn)
-  cursor.setHours(0, 0, 0, 0)
-  const limit = new Date(endsOn)
-  limit.setHours(0, 0, 0, 0)
+  let cursor = startOfThailandDay(startsOn)
+  const limit = startOfThailandDay(endsOn)
 
   while (cursor.getTime() <= limit.getTime()) {
     dates.push(new Date(cursor))
-    cursor.setDate(cursor.getDate() + 1)
+    cursor = addThailandDays(cursor, 1)
   }
 
   return dates
@@ -111,10 +109,8 @@ export const createRoutineTaskService = () => {
         throw new HttpError(400, 'End date must be later than or equal to start date')
       }
 
-      const startsOn = new Date(startsOnInput)
-      startsOn.setHours(0, 0, 0, 0)
-      const endsOn = new Date(endsOnInput)
-      endsOn.setHours(0, 0, 0, 0)
+      const startsOn = startOfThailandDay(new Date(startsOnInput))
+      const endsOn = startOfThailandDay(new Date(endsOnInput))
 
       const assignment = await RoutineTaskAssignmentModel.create({
         templateId: taskId,
