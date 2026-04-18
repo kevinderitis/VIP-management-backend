@@ -23,7 +23,22 @@ Then add your Mongo connection string to `.env`:
 
 ```env
 MONGODB_URL=your-mongodb-url
+WEB_PUSH_SUBJECT=mailto:notifications@yourdomain.com
+WEB_PUSH_PUBLIC_KEY=your-web-push-public-key
+WEB_PUSH_PRIVATE_KEY=your-web-push-private-key
 ```
+
+### Push Notifications
+
+To support notifications when the PWA is closed, configure Web Push VAPID keys in the backend:
+
+```env
+WEB_PUSH_SUBJECT=mailto:notifications@yourdomain.com
+WEB_PUSH_PUBLIC_KEY=your-web-push-public-key
+WEB_PUSH_PRIVATE_KEY=your-web-push-private-key
+```
+
+If these values are missing, the backend generates temporary keys on boot. That works only for local testing; subscriptions break after a restart.
 
 ## Scripts
 
@@ -72,6 +87,9 @@ npm run seed
 - `PUT /api/rewards/:rewardId`
 - `PATCH /api/rewards/:rewardId/toggle-active`
 - `POST /api/rewards/:rewardId/redeem`
+- `GET /api/push/public-key`
+- `POST /api/push/subscriptions`
+- `DELETE /api/push/subscriptions`
 
 ## Structure
 

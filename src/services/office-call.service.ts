@@ -3,6 +3,7 @@ import { OfficeCallModel } from '../models/office-call.model.js'
 import { UserModel } from '../models/user.model.js'
 import { createActivityService } from './activity.service.js'
 import { emitToUser } from '../realtime/socket.js'
+import { sendPushNotificationsToUsers } from './push-notification.service.js'
 import { serializeOfficeCall } from '../utils/serializers.js'
 
 const activityService = createActivityService()
@@ -44,6 +45,16 @@ export const createOfficeCallService = () => ({
       if (!serialized.volunteerId) return
       emitToUser(serialized.volunteerId, 'office-call:new', serialized)
     })
+
+    await sendPushNotificationsToUsers(
+      createdCalls.map((call) => String(call.volunteerId)),
+      {
+        title: 'Come to the office',
+        body: `${admin.name} is calling you to the office.`,
+        tag: `office-call-${String(admin._id)}-${Date.now()}`,
+        url: '/app',
+      },
+    )
 
     return createdCalls.map((call) => serializeOfficeCall(call.toObject()))
   },

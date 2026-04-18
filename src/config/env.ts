@@ -8,6 +8,9 @@ const envSchema = z.object({
   MONGODB_URL: z.string().min(1),
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default('7d'),
+  WEB_PUSH_SUBJECT: z.string().default('mailto:notifications@volunteerflow.local'),
+  WEB_PUSH_PUBLIC_KEY: z.string().optional(),
+  WEB_PUSH_PRIVATE_KEY: z.string().optional(),
 })
 
 export const env = envSchema.parse(process.env)

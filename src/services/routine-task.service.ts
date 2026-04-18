@@ -8,6 +8,7 @@ import { emitRealtimeEvent } from '../realtime/socket.js'
 import { combineDateAndTime } from '../utils/date.js'
 import { serializeRoutineAssignment, serializeRoutineTask } from '../utils/serializers.js'
 import { createActivityService } from './activity.service.js'
+import { sendPushNotificationsToUsers } from './push-notification.service.js'
 
 const weekdayIndexes: Record<Weekday, number> = {
   MONDAY: 1,
@@ -165,6 +166,12 @@ export const createRoutineTaskService = () => {
         'Recurring task assigned',
         'Scheduled task instances were generated for the selected dates, weekdays, and time window.',
       )
+      await sendPushNotificationsToUsers([volunteerId], {
+        title: 'Recurring tasks assigned',
+        body: `${template.name} was scheduled for ${tasksToCreate.length} time slot${tasksToCreate.length === 1 ? '' : 's'}.`,
+        tag: `routine-${String(assignment._id)}`,
+        url: '/app/my-tasks',
+      })
       emitRealtimeEvent('routines:assigned', { taskId, volunteerId, generated: tasksToCreate.length })
       return serializeRoutineAssignment(assignment.toObject())
     },
@@ -230,6 +237,12 @@ export const createRoutineTaskService = () => {
         'Recurring assignment reassigned',
         `${volunteer.name} is now responsible for the selected recurring assignment.`,
       )
+      await sendPushNotificationsToUsers([volunteerId], {
+        title: 'Recurring assignment updated',
+        body: `You are now assigned to a recurring task schedule.`,
+        tag: `routine-reassign-${String(assignment._id)}`,
+        url: '/app/my-tasks',
+      })
 
       emitRealtimeEvent('routines:assignment-reassigned', { assignmentId, volunteerId })
       return serializeRoutineAssignment(assignment.toObject())

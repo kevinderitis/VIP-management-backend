@@ -13,6 +13,7 @@ import { TaskModel } from '../models/task.model.js'
 import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
 import { registerBedConflictIfNeeded } from './bed-conflict.service.js'
+import { sendPushNotificationsToUsers } from './push-notification.service.js'
 import { serializeCleaningPlaceStatus } from '../utils/serializers.js'
 
 type BedInput = {
@@ -170,6 +171,16 @@ const registerBedConflicts = async (input: {
   }
 }
 
+const activeVolunteerIds = async () => {
+  const volunteers = await UserModel.find({ role: 'VOLUNTEER', isActive: true }).select('_id').lean()
+  return volunteers.map((volunteer) => String(volunteer._id))
+}
+
+const activeCleanerIds = async () => {
+  const cleaners = await UserModel.find({ role: 'CLEANER', isActive: true }).select('_id').lean()
+  return cleaners.map((cleaner) => String(cleaner._id))
+}
+
 const syncBedTask = async (input: {
   roomNumber?: number
   roomCode?: string
@@ -240,7 +251,7 @@ const syncBedTask = async (input: {
   const startsAt = new Date()
   const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
 
-  await TaskModel.create({
+  const createdTask = await TaskModel.create({
     title,
     description,
     category: 'HOUSEKEEPING',
@@ -341,7 +352,7 @@ const syncTrashTask = async (input: {
 
   const startsAt = new Date()
   const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
-  await TaskModel.create({
+  const createdTask = await TaskModel.create({
     title,
     description,
     category: 'HOUSEKEEPING',
@@ -494,7 +505,7 @@ const syncCleaningServiceTask = async (input: {
 
   const startsAt = new Date()
   const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
-  await TaskModel.create({
+  const createdTask = await TaskModel.create({
     title: autoTitle,
     description: autoDescription,
     category: 'HOUSEKEEPING',
@@ -607,6 +618,27 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
     trashTaskPoints: roomDefinition?.trashTaskPoints ?? 10,
   })
 
+  const roomReference = roomTitle(input.roomCode, input.roomNumber)
+  const hasVolunteerRoomTasks =
+    beds.some((bed) => bedStateRequiresTask(statusFromLabel(bed.label) ?? 'READY')) || trashRequested
+
+  if (volunteerAssigneeId && hasVolunteerRoomTasks) {
+    await sendPushNotificationsToUsers([volunteerAssigneeId], {
+      title: 'New room assignment',
+      body: `${roomReference} was assigned to you.`,
+      tag: `room-assignment-${input.roomCode ?? input.roomNumber}`,
+      url: '/app/my-tasks',
+    })
+  } else if (hasVolunteerRoomTasks) {
+    const volunteerIds = await activeVolunteerIds()
+    await sendPushNotificationsToUsers(volunteerIds, {
+      title: 'New room tasks available',
+      body: `${roomReference} has new tasks available to claim.`,
+      tag: `room-available-${input.roomCode ?? input.roomNumber}`,
+      url: '/app/tasks',
+    })
+  }
+
   if (needsCleaningRequest(input.label)) {
     await syncCleaningServiceTask({
       placeType: 'ROOM',
@@ -618,6 +650,23 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
       assignCleanerId: cleanerAssigneeId,
       shouldBeActive: true,
     })
+
+    if (cleanerAssigneeId) {
+      await sendPushNotificationsToUsers([cleanerAssigneeId], {
+        title: 'New cleaning assignment',
+        body: `${roomReference} was assigned to you for cleaning.`,
+        tag: `cleaning-room-${input.roomCode ?? input.roomNumber}`,
+        url: '/cleaning/my-tasks',
+      })
+    } else {
+      const cleanerIds = await activeCleanerIds()
+      await sendPushNotificationsToUsers(cleanerIds, {
+        title: 'New cleaning task available',
+        body: `${roomReference} is available for cleaning.`,
+        tag: `cleaning-room-${input.roomCode ?? input.roomNumber}`,
+        url: '/cleaning/tasks',
+      })
+    }
   } else {
     await syncCleaningServiceTask({
       placeType: 'ROOM',
@@ -678,6 +727,25 @@ export const createCleaningPlaceStatusService = () => ({
       assignCleanerId: normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning' ? cleanerAssigneeId : undefined,
       shouldBeActive: normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning',
     })
+
+    if (normalizedLabel === 'need cleaning' || normalizedLabel === 'needs cleaning') {
+      if (cleanerAssigneeId) {
+        await sendPushNotificationsToUsers([cleanerAssigneeId], {
+          title: 'New cleaning assignment',
+          body: `${input.placeLabel} was assigned to you for cleaning.`,
+          tag: `cleaning-place-${input.cleaningAreaId ?? input.placeLabel}`,
+          url: '/cleaning/my-tasks',
+        })
+      } else {
+        const cleanerIds = await activeCleanerIds()
+        await sendPushNotificationsToUsers(cleanerIds, {
+          title: 'New cleaning task available',
+          body: `${input.placeLabel} is available for cleaning.`,
+          tag: `cleaning-place-${input.cleaningAreaId ?? input.placeLabel}`,
+          url: '/cleaning/tasks',
+        })
+      }
+    }
 
     emitRealtimeEvent('tasks:updated', { type: 'cleaning-place-updated', placeLabel: input.placeLabel })
     return serializeCleaningPlaceStatus(status.toObject())
@@ -768,6 +836,30 @@ export const createCleaningPlaceStatusService = () => ({
       })
 
       results.push(serializeCleaningPlaceStatus(status.toObject()))
+    }
+
+    if (volunteerAssigneeId && results.length > 0) {
+      const roomList = input.selections.map((selection) => roomTitle(selection.roomCode)).join(', ')
+      await sendPushNotificationsToUsers([volunteerAssigneeId], {
+        title: 'New room assignment',
+        body:
+          input.selections.length === 1
+            ? `${roomTitle(input.selections[0].roomCode)} was assigned to you.`
+            : `New room tasks were assigned to you: ${roomList}.`,
+        tag: `bulk-room-assignment-${Date.now()}`,
+        url: '/app/my-tasks',
+      })
+    } else if (results.length > 0) {
+      const volunteerIds = await activeVolunteerIds()
+      await sendPushNotificationsToUsers(volunteerIds, {
+        title: 'New room tasks available',
+        body:
+          input.selections.length === 1
+            ? `${roomTitle(input.selections[0].roomCode)} has new tasks available to claim.`
+            : `${input.selections.length} rooms now have new tasks available to claim.`,
+        tag: `bulk-room-available-${Date.now()}`,
+        url: '/app/tasks',
+      })
     }
 
     emitRealtimeEvent('tasks:updated', { type: 'bulk-bed-tasks-created', count: results.length })

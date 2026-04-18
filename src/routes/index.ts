@@ -10,6 +10,7 @@ import { cleaningTasksRouter } from './cleaning-tasks.routes.js'
 import { dashboardRouter } from './dashboard.routes.js'
 import { officeCallsRouter } from './office-calls.routes.js'
 import { packsRouter } from './packs.routes.js'
+import { pushRouter } from './push.routes.js'
 import { rewardsRouter } from './rewards.routes.js'
 import { routinesRouter } from './routines.routes.js'
 import { tasksRouter } from './tasks.routes.js'
@@ -30,6 +31,7 @@ router.use('/app-state', appStateRouter)
 router.use('/bed-conflicts', bedConflictsRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/office-calls', officeCallsRouter)
+router.use('/push', pushRouter)
 router.use('/volunteers', volunteersRouter)
 router.use('/cleaners', cleanersRouter)
 router.use('/tasks', tasksRouter)

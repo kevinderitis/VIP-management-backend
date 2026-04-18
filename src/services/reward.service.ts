@@ -4,9 +4,14 @@ import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
 import { serializeRedemption, serializeReward } from '../utils/serializers.js'
 import { createActivityService } from './activity.service.js'
+import { sendPushNotificationsToUsers } from './push-notification.service.js'
 
 export const createRewardService = () => {
   const activityService = createActivityService()
+  const activeVolunteerIds = async () => {
+    const volunteers = await UserModel.find({ role: 'VOLUNTEER', isActive: true }).select('_id').lean()
+    return volunteers.map((volunteer) => String(volunteer._id))
+  }
 
   return {
     async list() {
@@ -23,6 +28,15 @@ export const createRewardService = () => {
       stock?: number
     }) {
       const reward = await RewardModel.create(input)
+      if (reward.isActive) {
+        const volunteerIds = await activeVolunteerIds()
+        await sendPushNotificationsToUsers(volunteerIds, {
+          title: 'New reward available',
+          body: `${reward.name} is now available in Rewards.`,
+          tag: `reward-${String(reward._id)}`,
+          url: '/app/rewards',
+        })
+      }
       return serializeReward(reward.toObject())
     },
 
@@ -46,6 +60,15 @@ export const createRewardService = () => {
       if (!reward) throw new HttpError(404, 'Reward not found')
       reward.isActive = !reward.isActive
       await reward.save()
+      if (reward.isActive) {
+        const volunteerIds = await activeVolunteerIds()
+        await sendPushNotificationsToUsers(volunteerIds, {
+          title: 'New reward available',
+          body: `${reward.name} is now available in Rewards.`,
+          tag: `reward-${String(reward._id)}`,
+          url: '/app/rewards',
+        })
+      }
       return serializeReward(reward.toObject())
     },
 
