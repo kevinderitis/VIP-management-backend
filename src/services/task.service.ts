@@ -18,29 +18,9 @@ export const createTaskService = () => {
   const activityService = createActivityService()
   const audienceForRole = (role: UserRole): TaskAudience => (role === 'CLEANER' ? 'CLEANING' : 'VOLUNTEER')
   const appPathForAudience = (audience: TaskAudience) => (audience === 'CLEANING' ? '/cleaning/my-tasks' : '/app/my-tasks')
-  const roleForAudience = (audience: TaskAudience): UserRole => (audience === 'CLEANING' ? 'CLEANER' : 'VOLUNTEER')
   const unassignedQuery = () => ({
     $or: [{ assignedToId: { $exists: false } }, { assignedToId: null }],
   })
-  const activeUserIdsForAudience = async (audience: TaskAudience) => {
-    const users = await UserModel.find({ role: roleForAudience(audience), isActive: true }).select('_id').lean()
-    return users.map((user) => String(user._id))
-  }
-  const notifyAvailableTask = async (input: {
-    audience: TaskAudience
-    title: string
-    taskId: string
-  }) => {
-    const userIds = await activeUserIdsForAudience(input.audience)
-    if (!userIds.length) return
-
-    await sendPushNotificationsToUsers(userIds, {
-      title: input.audience === 'CLEANING' ? 'New cleaning task available' : 'New task available',
-      body: input.title,
-      tag: `available-${input.taskId}`,
-      url: input.audience === 'CLEANING' ? '/cleaning/tasks' : '/app/tasks',
-    })
-  }
   const roomDateKey = (value?: Date | null) => {
     const source = value ?? new Date()
     return new Date(source).toISOString().slice(0, 10)
@@ -269,13 +249,6 @@ export const createTaskService = () => {
             ? `It was created with ${volunteerSlots} volunteer slots.`
             : 'It is already available to the volunteer team.',
       )
-      if (primaryTask.status === 'AVAILABLE') {
-        await notifyAvailableTask({
-          audience: primaryTask.audience,
-          title: primaryTask.title,
-          taskId: String(primaryTask._id),
-        })
-      }
       emitRealtimeEvent('tasks:updated', { type: 'created', taskId: String(primaryTask._id) })
       return serializeTask(primaryTask.toObject())
     },
@@ -481,25 +454,11 @@ export const createTaskService = () => {
           ],
         )
         const updated = await TaskModel.findById(taskId).lean()
-        if (updated && updated.status === 'AVAILABLE') {
-          await notifyAvailableTask({
-            audience: updated.audience,
-            title: updated.title,
-            taskId: String(updated._id),
-          })
-        }
         return serializeTask(updated!)
       }
       task.status = task.assignedToId ? 'ASSIGNED' : 'AVAILABLE'
       task.publishedAt = new Date()
       await task.save()
-      if (task.status === 'AVAILABLE') {
-        await notifyAvailableTask({
-          audience: task.audience,
-          title: task.title,
-          taskId: String(task._id),
-        })
-      }
       return serializeTask(task.toObject())
     },
 
@@ -890,31 +849,6 @@ export const createTaskService = () => {
         task.status = task.assignedToId ? 'ASSIGNED' : 'AVAILABLE'
         task.publishedAt = new Date()
         await task.save()
-      }
-
-      const firstAvailableVolunteerTask = dueTasks.find((task) => task.status === 'AVAILABLE' && task.audience === 'VOLUNTEER')
-      const firstAvailableCleaningTask = dueTasks.find((task) => task.status === 'AVAILABLE' && task.audience === 'CLEANING')
-
-      if (firstAvailableVolunteerTask) {
-        await notifyAvailableTask({
-          audience: 'VOLUNTEER',
-          title:
-            dueTasks.filter((task) => task.status === 'AVAILABLE' && task.audience === 'VOLUNTEER').length > 1
-              ? 'New volunteer tasks are now available.'
-              : firstAvailableVolunteerTask.title,
-          taskId: String(firstAvailableVolunteerTask._id),
-        })
-      }
-
-      if (firstAvailableCleaningTask) {
-        await notifyAvailableTask({
-          audience: 'CLEANING',
-          title:
-            dueTasks.filter((task) => task.status === 'AVAILABLE' && task.audience === 'CLEANING').length > 1
-              ? 'New cleaning tasks are now available.'
-              : firstAvailableCleaningTask.title,
-          taskId: String(firstAvailableCleaningTask._id),
-        })
       }
 
       emitRealtimeEvent('tasks:updated', { type: 'scheduler', count: dueTasks.length })

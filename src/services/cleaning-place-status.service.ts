@@ -171,16 +171,6 @@ const registerBedConflicts = async (input: {
   }
 }
 
-const activeVolunteerIds = async () => {
-  const volunteers = await UserModel.find({ role: 'VOLUNTEER', isActive: true }).select('_id').lean()
-  return volunteers.map((volunteer) => String(volunteer._id))
-}
-
-const activeCleanerIds = async () => {
-  const cleaners = await UserModel.find({ role: 'CLEANER', isActive: true }).select('_id').lean()
-  return cleaners.map((cleaner) => String(cleaner._id))
-}
-
 const syncBedTask = async (input: {
   roomNumber?: number
   roomCode?: string
@@ -629,14 +619,6 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
       tag: `room-assignment-${input.roomCode ?? input.roomNumber}`,
       url: '/app/my-tasks',
     })
-  } else if (hasVolunteerRoomTasks) {
-    const volunteerIds = await activeVolunteerIds()
-    await sendPushNotificationsToUsers(volunteerIds, {
-      title: 'New room tasks available',
-      body: `${roomReference} has new tasks available to claim.`,
-      tag: `room-available-${input.roomCode ?? input.roomNumber}`,
-      url: '/app/tasks',
-    })
   }
 
   if (needsCleaningRequest(input.label)) {
@@ -657,14 +639,6 @@ const upsertRoomStatus = async (input: UpsertInput, volunteerAssigneeId?: string
         body: `${roomReference} was assigned to you for cleaning.`,
         tag: `cleaning-room-${input.roomCode ?? input.roomNumber}`,
         url: '/cleaning/my-tasks',
-      })
-    } else {
-      const cleanerIds = await activeCleanerIds()
-      await sendPushNotificationsToUsers(cleanerIds, {
-        title: 'New cleaning task available',
-        body: `${roomReference} is available for cleaning.`,
-        tag: `cleaning-room-${input.roomCode ?? input.roomNumber}`,
-        url: '/cleaning/tasks',
       })
     }
   } else {
@@ -735,14 +709,6 @@ export const createCleaningPlaceStatusService = () => ({
           body: `${input.placeLabel} was assigned to you for cleaning.`,
           tag: `cleaning-place-${input.cleaningAreaId ?? input.placeLabel}`,
           url: '/cleaning/my-tasks',
-        })
-      } else {
-        const cleanerIds = await activeCleanerIds()
-        await sendPushNotificationsToUsers(cleanerIds, {
-          title: 'New cleaning task available',
-          body: `${input.placeLabel} is available for cleaning.`,
-          tag: `cleaning-place-${input.cleaningAreaId ?? input.placeLabel}`,
-          url: '/cleaning/tasks',
         })
       }
     }
@@ -848,17 +814,6 @@ export const createCleaningPlaceStatusService = () => ({
             : `New room tasks were assigned to you: ${roomList}.`,
         tag: `bulk-room-assignment-${Date.now()}`,
         url: '/app/my-tasks',
-      })
-    } else if (results.length > 0) {
-      const volunteerIds = await activeVolunteerIds()
-      await sendPushNotificationsToUsers(volunteerIds, {
-        title: 'New room tasks available',
-        body:
-          input.selections.length === 1
-            ? `${roomTitle(input.selections[0].roomCode)} has new tasks available to claim.`
-            : `${input.selections.length} rooms now have new tasks available to claim.`,
-        tag: `bulk-room-available-${Date.now()}`,
-        url: '/app/tasks',
       })
     }
 
