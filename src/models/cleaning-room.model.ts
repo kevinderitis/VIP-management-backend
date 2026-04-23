@@ -7,7 +7,7 @@ const cleaningRoomSchema = new Schema(
     section: { type: String, required: true, index: true },
     label: { type: String, required: true },
     roomType: { type: String, enum: ROOM_TYPES, required: true },
-    bedCount: { type: Number, required: true, min: 1, max: 14 },
+    bedCount: { type: Number, required: true, min: 1 },
     bedTaskPoints: { type: Number, required: true, min: 1, default: 10 },
     checkTaskPoints: { type: Number, required: true, min: 1, default: 10 },
     trashTaskPoints: { type: Number, required: true, min: 1, default: 10 },

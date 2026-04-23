@@ -130,7 +130,7 @@ const normalizeBeds = (beds: BedInput[] | undefined, roomType: RoomType, bedCoun
 
   const source = beds?.length
     ? beds
-    : Array.from({ length: Math.max(2, Math.min(14, bedCount ?? 4)) }, (_, index) => ({
+    : Array.from({ length: Math.max(2, bedCount ?? 4) }, (_, index) => ({
         bedNumber: index + 1,
         label: BED_STATUS_PRESETS.READY.label,
         color: BED_STATUS_PRESETS.READY.color,
