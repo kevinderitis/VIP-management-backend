@@ -49,7 +49,7 @@ const guestSchema = z.object({
   gender: z.enum(['M', 'F']),
   passportNo: z.string().trim().min(1),
   nationality: z.string().trim().length(3),
-  birthDate: z.string().trim().min(1),
+  birthDate: z.string().trim().optional(),
 })
 
 const manualStaySchema = z.object({
