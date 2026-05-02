@@ -4,7 +4,7 @@ import { ROOM_TYPES } from '../domain/cleaning-places.js'
 
 const bedStatusSchema = new Schema(
   {
-    bedNumber: { type: Number, required: true, min: 1, max: 24 },
+    bedNumber: { type: Number, required: true, min: 1 },
     label: { type: String, required: true },
     color: { type: String, required: true },
   },

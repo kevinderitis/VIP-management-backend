@@ -10,6 +10,7 @@ const bedConflictSchema = new Schema(
     fromColor: { type: String, required: true },
     toLabel: { type: String, required: true },
     toColor: { type: String, required: true },
+    detail: { type: String, default: '' },
     resolvedAt: { type: Date, default: null },
     resolvedById: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { bedConflictsRouter } from './bed-conflicts.routes.js'
 import { appStateRouter } from './app-state.routes.js'
 import { authRouter } from './auth.routes.js'
+import { checkinsRouter } from './checkins.routes.js'
 import { cleanersRouter } from './cleaners.routes.js'
 import { cleaningAreasRouter } from './cleaning-areas.routes.js'
 import { cleaningPlaceStatusesRouter } from './cleaning-place-statuses.routes.js'
@@ -12,6 +13,7 @@ import { officeCallsRouter } from './office-calls.routes.js'
 import { packsRouter } from './packs.routes.js'
 import { pushRouter } from './push.routes.js'
 import { rewardsRouter } from './rewards.routes.js'
+import { tm30Router } from './tm30.routes.js'
 import { routinesRouter } from './routines.routes.js'
 import { tasksRouter } from './tasks.routes.js'
 import { volunteersRouter } from './volunteers.routes.js'
@@ -29,6 +31,7 @@ router.get('/health', (_request, response) => {
 router.use('/auth', authRouter)
 router.use('/app-state', appStateRouter)
 router.use('/bed-conflicts', bedConflictsRouter)
+router.use('/checkins', checkinsRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/office-calls', officeCallsRouter)
 router.use('/push', pushRouter)
@@ -42,5 +45,6 @@ router.use('/cleaning-place-statuses', cleaningPlaceStatusesRouter)
 router.use('/packs', packsRouter)
 router.use('/routine-tasks', routinesRouter)
 router.use('/rewards', rewardsRouter)
+router.use('/tm30', tm30Router)
 
 export { router as apiRouter }

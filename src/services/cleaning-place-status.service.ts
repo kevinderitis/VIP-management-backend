@@ -12,7 +12,7 @@ import { CleaningRoomModel } from '../models/cleaning-room.model.js'
 import { TaskModel } from '../models/task.model.js'
 import { UserModel } from '../models/user.model.js'
 import { emitRealtimeEvent } from '../realtime/socket.js'
-import { registerBedConflictIfNeeded } from './bed-conflict.service.js'
+import { registerBedConflictIfNeeded, registerCheckoutOverrideConflictIfNeeded } from './bed-conflict.service.js'
 import { sendPushNotificationsToUsers } from './push-notification.service.js'
 import { serializeCleaningPlaceStatus } from '../utils/serializers.js'
 
@@ -161,6 +161,14 @@ const registerBedConflicts = async (input: {
   for (const nextBed of input.nextBeds) {
     const previousBed = input.previousBeds.find((bed) => bed.bedNumber === nextBed.bedNumber)
     await registerBedConflictIfNeeded({
+      roomCode: input.roomCode,
+      roomSection: input.roomSection,
+      roomLabel: input.placeLabel,
+      bedNumber: nextBed.bedNumber,
+      previousLabel: previousBed?.label,
+      nextLabel: nextBed.label,
+    })
+    await registerCheckoutOverrideConflictIfNeeded({
       roomCode: input.roomCode,
       roomSection: input.roomSection,
       roomLabel: input.placeLabel,

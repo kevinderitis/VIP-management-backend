@@ -1,5 +1,6 @@
 import { ActivityModel } from '../models/activity.model.js'
 import { BedConflictModel } from '../models/bed-conflict.model.js'
+import { createCheckinService } from './checkin.service.js'
 import { CleaningAreaModel } from '../models/cleaning-area.model.js'
 import { CleaningPlaceStatusModel } from '../models/cleaning-place-status.model.js'
 import { CleaningRoomModel } from '../models/cleaning-room.model.js'
@@ -18,6 +19,7 @@ import {
   serializeCompletion,
   serializeCleaningPlaceStatus,
   serializeCleaningRoom,
+  serializeActiveStay,
   serializeOfficeCall,
   serializePack,
   serializePackAssignment,
@@ -33,11 +35,12 @@ import { UserRole } from '../domain/enums.js'
 export const createAppStateService = () => ({
   async getState(userId: string, role: UserRole) {
     await createCleaningRoomService().ensureDefaults()
+    const checkinService = createCheckinService()
 
     const isAdmin = role === 'ADMIN'
     const isCleaner = role === 'CLEANER'
 
-    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms, officeCalls, bedConflicts] =
+    const [users, tasks, packs, packAssignments, routineTasks, routineAssignments, taskHistory, rewards, redemptions, activities, cleaningAreas, cleaningPlaceStatuses, cleaningRooms, officeCalls, bedConflicts, activeStays] =
       await Promise.all([
         UserModel.find(
           isAdmin ? {} : isCleaner ? { role: 'CLEANER' } : { role: 'VOLUNTEER' },
@@ -70,6 +73,7 @@ export const createAppStateService = () => ({
           ? OfficeCallModel.find({ volunteerId: userId, status: 'ACTIVE' }).sort({ createdAt: -1 }).lean()
           : Promise.resolve([]),
         isAdmin ? BedConflictModel.find({ resolvedAt: null }).sort({ createdAt: -1 }).lean() : Promise.resolve([]),
+        isAdmin ? checkinService.listActiveOccupancies() : Promise.resolve([]),
       ])
 
     return {
@@ -85,6 +89,7 @@ export const createAppStateService = () => ({
       activities: activities.map(serializeActivity),
       officeCalls: officeCalls.map(serializeOfficeCall),
       bedConflicts: bedConflicts.map(serializeBedConflict),
+      activeStays: activeStays.map(serializeActiveStay),
       cleaningAreas: cleaningAreas.map((area) => ({
         id: String(area._id),
         name: area.name,

@@ -84,6 +84,22 @@ export const serializeCleaningPlaceStatus = (status: DocumentLike) => ({
     : [],
 })
 
+export const serializeActiveStay = (stay: Record<string, unknown>) => ({
+  id: idOf(stay.id ?? stay._id),
+  guestId: idOf(stay.guestId),
+  guestName: stay.guestName,
+  passportNo: stay.passportNo,
+  nationality: stay.nationality,
+  roomCode: stay.roomCode,
+  roomSection: stay.roomSection,
+  roomLabel: stay.roomLabel,
+  roomType: lower(stay.roomType),
+  bedNumber: stay.bedNumber,
+  checkInDate: stay.checkInDate,
+  checkOutDate: stay.checkOutDate,
+  status: lower(stay.status),
+})
+
 export const serializeCleaningRoom = (room: DocumentLike) => ({
   id: idOf(room._id),
   code: room.code,
@@ -107,6 +123,7 @@ export const serializeBedConflict = (conflict: DocumentLike) => ({
   fromColor: conflict.fromColor,
   toLabel: conflict.toLabel,
   toColor: conflict.toColor,
+  detail: conflict.detail,
   createdAt: conflict.createdAt,
   resolvedAt: conflict.resolvedAt,
 })
