@@ -51,6 +51,12 @@ const bulkBedTaskSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 })
 
+const bulkRoomCleaningSchema = z.object({
+  roomCodes: z.array(z.string().min(1)).min(1).max(200),
+  label: z.string().min(1),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+})
+
 router.get(
   '/',
   requireRole('ADMIN'),
@@ -74,6 +80,15 @@ router.post(
   asyncHandler(async (request, response) => {
     const payload = bulkBedTaskSchema.parse(request.body)
     response.json(await service.bulkCreateBedTasks({ ...payload, adminUserId: request.auth!.userId }))
+  }),
+)
+
+router.post(
+  '/bulk-room-status',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    const payload = bulkRoomCleaningSchema.parse(request.body)
+    response.json(await service.bulkUpdateRoomCleaning({ ...payload, adminUserId: request.auth!.userId }))
   }),
 )
 

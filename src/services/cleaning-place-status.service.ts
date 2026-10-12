@@ -54,6 +54,13 @@ type BulkBedTaskInput = {
   adminUserId: string
 }
 
+type BulkRoomCleaningInput = {
+  roomCodes: string[]
+  label: string
+  color: string
+  adminUserId: string
+}
+
 const ACTIVE_TASK_STATUSES = ['DRAFT', 'SCHEDULED', 'AVAILABLE', 'ASSIGNED'] as const
 const REUSABLE_BED_TASK_STATUSES = [...ACTIVE_TASK_STATUSES, 'CANCELLED', 'COMPLETED'] as const
 const cleaningRequestLabels = ['need cleaning', 'needs cleaning']
@@ -826,6 +833,80 @@ export const createCleaningPlaceStatusService = () => ({
     }
 
     emitRealtimeEvent('tasks:updated', { type: 'bulk-bed-tasks-created', count: results.length })
+    return results
+  },
+
+  async bulkUpdateRoomCleaning(input: BulkRoomCleaningInput) {
+    const normalizedCodes = [...new Set(input.roomCodes.map((code) => code.trim()).filter(Boolean))]
+    if (!normalizedCodes.length) throw new HttpError(400, 'Select at least one room')
+    const results = []
+
+    for (const roomCode of normalizedCodes) {
+      const roomDefinition = await CleaningRoomModel.findOne({ code: roomCode }).lean()
+      if (!roomDefinition) throw new HttpError(404, `Room ${roomCode} not found`)
+      const roomType = (roomDefinition.roomType ?? 'PRIVATE') as RoomType
+      const existingStatus = await CleaningPlaceStatusModel.findOne({
+        placeType: 'ROOM',
+        roomCode,
+      }).lean()
+
+      const currentBeds = normalizeBeds(
+        Array.isArray(existingStatus?.beds)
+          ? existingStatus.beds.map((bed) => ({
+              bedNumber: Number(bed.bedNumber),
+              label: String(bed.label),
+              color: String(bed.color),
+            }))
+          : undefined,
+        roomType,
+        roomDefinition?.bedCount,
+      )
+
+      const placeLabel = roomDefinition.label ?? `Room ${roomCode}`
+      const roomSection = roomDefinition.section
+      const trashRequested = Boolean(existingStatus?.trashRequested)
+      const summary =
+        roomType === 'SHARED'
+          ? deriveBoardStatus({ roomServiceLabel: input.label, roomServiceColor: input.color, beds: currentBeds })
+          : { label: input.label, color: input.color }
+
+      const status = await CleaningPlaceStatusModel.findOneAndUpdate(
+        { placeType: 'ROOM', roomCode },
+        {
+          placeType: 'ROOM',
+          roomCode,
+          roomSection,
+          roomType,
+          placeLabel,
+          label: summary.label,
+          color: summary.color,
+          roomServiceLabel: input.label,
+          roomServiceColor: input.color,
+          trashRequested,
+          beds: currentBeds,
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      )
+
+      if (!status) throw new HttpError(500, `Could not save status for room ${roomCode}`)
+
+      // Same behaviour as assigning to a cleaner, but left unassigned:
+      // creates/reactivates the CLEANING audience task when Needs cleaning,
+      // cancels it otherwise.
+      await syncCleaningServiceTask({
+        placeType: 'ROOM',
+        roomCode,
+        roomSection,
+        placeLabel,
+        adminUserId: input.adminUserId,
+        assignCleanerId: undefined,
+        shouldBeActive: needsCleaningRequest(input.label),
+      })
+
+      results.push(serializeCleaningPlaceStatus(status.toObject()))
+    }
+
+    emitRealtimeEvent('tasks:updated', { type: 'bulk-room-cleaning-updated', count: results.length })
     return results
   },
 })
