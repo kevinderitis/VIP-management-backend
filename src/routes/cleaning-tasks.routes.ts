@@ -128,6 +128,14 @@ router.post(
 )
 
 router.post(
+  '/:taskId/takeover',
+  requireRole('CLEANER'),
+  asyncHandler(async (request, response) => {
+    response.json(await taskService.takeover(getParam(request.params.taskId), request.auth!.userId))
+  }),
+)
+
+router.post(
   '/:taskId/release',
   requireRole('CLEANER'),
   asyncHandler(async (request, response) => {

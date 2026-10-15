@@ -605,6 +605,27 @@ export const createTaskService = () => {
       return serializeTask(task.toObject())
     },
 
+    async takeover(taskId: string, userId: string) {
+      const task = await TaskModel.findById(taskId)
+      if (!task || task.audience !== 'CLEANING') throw new HttpError(404, 'Cleaning task not found')
+      if (!['ASSIGNED', 'SCHEDULED'].includes(task.status)) throw new HttpError(400, 'Task cannot be taken over')
+      if (String(task.assignedToId) === userId) throw new HttpError(400, 'Task is already assigned to you')
+      const user = await UserModel.findById(userId)
+      if (!user || user.role !== 'CLEANER') throw new HttpError(404, 'Cleaner not found')
+      const previousAssigneeId = task.assignedToId ? String(task.assignedToId) : undefined
+      task.status = 'ASSIGNED'
+      task.set('assignedToId', userId)
+      task.set('lastAssignedToId', userId)
+      await task.save()
+      await activityService.create(
+        'TASK_TAKEN',
+        `Task taken over: ${task.title}`,
+        `${user.name} took over this task for their own list.`,
+      )
+      emitRealtimeEvent('tasks:updated', { type: 'taken-over', taskId, previousAssigneeId })
+      return serializeTask(task.toObject())
+    },
+
     async release(taskId: string, userId: string, actorRole: UserRole = 'VOLUNTEER') {
       const task = await TaskModel.findById(taskId)
       if (!task || String(task.assignedToId) !== userId) throw new HttpError(400, 'Task cannot be released by this user')

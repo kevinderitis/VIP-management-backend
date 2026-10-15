@@ -58,6 +58,7 @@ type BulkRoomCleaningInput = {
   roomCodes: string[]
   label: string
   color: string
+  assignCleanerId?: string
   adminUserId: string
 }
 
@@ -839,6 +840,7 @@ export const createCleaningPlaceStatusService = () => ({
   async bulkUpdateRoomCleaning(input: BulkRoomCleaningInput) {
     const normalizedCodes = [...new Set(input.roomCodes.map((code) => code.trim()).filter(Boolean))]
     if (!normalizedCodes.length) throw new HttpError(400, 'Select at least one room')
+    const cleanerAssigneeId = await resolveCleanerAssignee(input.assignCleanerId)
     const results = []
 
     for (const roomCode of normalizedCodes) {
@@ -890,20 +892,33 @@ export const createCleaningPlaceStatusService = () => ({
 
       if (!status) throw new HttpError(500, `Could not save status for room ${roomCode}`)
 
-      // Same behaviour as assigning to a cleaner, but left unassigned:
-      // creates/reactivates the CLEANING audience task when Needs cleaning,
-      // cancels it otherwise.
+      // Same behaviour as assigning to a cleaner: creates/reactivates the
+      // CLEANING audience task when Needs cleaning, cancels it otherwise.
+      // Without assignCleanerId the tasks stay unassigned (AVAILABLE).
       await syncCleaningServiceTask({
         placeType: 'ROOM',
         roomCode,
         roomSection,
         placeLabel,
         adminUserId: input.adminUserId,
-        assignCleanerId: undefined,
+        assignCleanerId: cleanerAssigneeId,
         shouldBeActive: needsCleaningRequest(input.label),
       })
 
       results.push(serializeCleaningPlaceStatus(status.toObject()))
+    }
+
+    if (cleanerAssigneeId && results.length > 0) {
+      const roomList = normalizedCodes.map((code) => roomTitle(code)).join(', ')
+      await sendPushNotificationsToUsers([cleanerAssigneeId], {
+        title: 'New cleaning assignment',
+        body:
+          normalizedCodes.length === 1
+            ? `${roomTitle(normalizedCodes[0])} was assigned to you for cleaning.`
+            : `New cleaning tasks were assigned to you: ${roomList}.`,
+        tag: `bulk-cleaning-assignment-${Date.now()}`,
+        url: '/cleaning/my-tasks',
+      })
     }
 
     emitRealtimeEvent('tasks:updated', { type: 'bulk-room-cleaning-updated', count: results.length })

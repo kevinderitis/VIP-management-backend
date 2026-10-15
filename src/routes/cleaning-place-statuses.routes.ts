@@ -55,6 +55,7 @@ const bulkRoomCleaningSchema = z.object({
   roomCodes: z.array(z.string().min(1)).min(1).max(200),
   label: z.string().min(1),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  assignCleanerId: z.string().optional(),
 })
 
 router.get(
