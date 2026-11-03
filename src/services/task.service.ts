@@ -543,6 +543,7 @@ export const createTaskService = () => {
       targetTask.assignedToId = assignee._id
       targetTask.lastAssignedToId = assignee._id
       targetTask.status = targetTask.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED'
+      targetTask.set('startedAt', undefined)
       await targetTask.save()
 
       await activityService.create(
@@ -572,6 +573,7 @@ export const createTaskService = () => {
 
       task.status = task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'AVAILABLE'
       task.set('assignedToId', undefined)
+      task.set('startedAt', undefined)
       task.publishedAt = new Date()
       await task.save()
 
@@ -595,6 +597,7 @@ export const createTaskService = () => {
       task.status = 'ASSIGNED'
       task.set('assignedToId', userId)
       task.set('lastAssignedToId', userId)
+      task.set('startedAt', undefined)
       await task.save()
       await activityService.create(
         'TASK_TAKEN',
@@ -616,6 +619,7 @@ export const createTaskService = () => {
       task.status = 'ASSIGNED'
       task.set('assignedToId', userId)
       task.set('lastAssignedToId', userId)
+      task.set('startedAt', undefined)
       await task.save()
       await activityService.create(
         'TASK_TAKEN',
@@ -623,6 +627,19 @@ export const createTaskService = () => {
         `${user.name} took over this task for their own list.`,
       )
       emitRealtimeEvent('tasks:updated', { type: 'taken-over', taskId, previousAssigneeId })
+      return serializeTask(task.toObject())
+    },
+
+    async start(taskId: string, userId: string) {
+      const task = await TaskModel.findById(taskId)
+      if (!task || String(task.assignedToId) !== userId) throw new HttpError(400, 'Task cannot be started by this user')
+      if (task.audience !== 'CLEANING') throw new HttpError(403, 'This task does not belong to your workspace')
+      if (!['ASSIGNED', 'SCHEDULED'].includes(task.status)) throw new HttpError(400, 'Task cannot be started')
+      if (!task.startedAt) {
+        task.startedAt = new Date()
+        await task.save()
+        emitRealtimeEvent('tasks:updated', { type: 'started', taskId })
+      }
       return serializeTask(task.toObject())
     },
 
@@ -634,6 +651,7 @@ export const createTaskService = () => {
       if (!user) throw new HttpError(404, actorRole === 'CLEANER' ? 'Cleaner not found' : 'Volunteer not found')
       task.status = 'AVAILABLE'
       task.set('assignedToId', undefined)
+      task.set('startedAt', undefined)
       task.publishedAt = new Date()
       await task.save()
       await activityService.create(

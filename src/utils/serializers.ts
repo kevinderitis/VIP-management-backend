@@ -40,6 +40,7 @@ export const serializeTask = (task: DocumentLike) => ({
   publishedAt: task.publishedAt,
   scheduledAt: task.startsAt,
   endsAt: task.endsAt,
+  startedAt: task.startedAt,
   assignedTo: idOf(task.assignedToId),
   lastAssignedTo: idOf(task.lastAssignedToId),
   createdBy: idOf(task.createdById),

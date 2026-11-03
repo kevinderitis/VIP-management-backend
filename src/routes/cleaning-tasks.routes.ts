@@ -120,6 +120,14 @@ router.post(
 )
 
 router.post(
+  '/:taskId/unassign',
+  requireRole('ADMIN'),
+  asyncHandler(async (request, response) => {
+    response.json(await taskService.unassign(getParam(request.params.taskId), 'CLEANING'))
+  }),
+)
+
+router.post(
   '/:taskId/claim',
   requireRole('CLEANER'),
   asyncHandler(async (request, response) => {
@@ -132,6 +140,14 @@ router.post(
   requireRole('CLEANER'),
   asyncHandler(async (request, response) => {
     response.json(await taskService.takeover(getParam(request.params.taskId), request.auth!.userId))
+  }),
+)
+
+router.post(
+  '/:taskId/start',
+  requireRole('CLEANER'),
+  asyncHandler(async (request, response) => {
+    response.json(await taskService.start(getParam(request.params.taskId), request.auth!.userId))
   }),
 )
 

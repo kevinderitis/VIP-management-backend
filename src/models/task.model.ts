@@ -20,6 +20,7 @@ const taskSchema = new Schema(
     publishedAt: { type: Date, required: true },
     startsAt: { type: Date },
     endsAt: { type: Date },
+    startedAt: { type: Date },
     notes: { type: String },
     source: { type: String, enum: TASK_SOURCES, required: true },
     sharedTaskGroupId: { type: String, index: true },
