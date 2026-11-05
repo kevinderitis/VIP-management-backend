@@ -9,6 +9,11 @@ import { getParam } from '../utils/http.js'
 const router = Router()
 const taskService = createTaskService()
 
+const completionChecklistSchema = z.object({
+  acOk: z.boolean().optional(),
+  lightOk: z.boolean().optional(),
+})
+
 const taskSchema = z
   .object({
     title: z.string().min(1),
@@ -163,7 +168,16 @@ router.post(
   '/:taskId/complete',
   requireRole('CLEANER'),
   asyncHandler(async (request, response) => {
-    response.json(await taskService.complete(getParam(request.params.taskId), request.auth!.userId, 'CLEANER'))
+    const checklist = completionChecklistSchema.parse(request.body ?? {})
+    response.json(
+      await taskService.complete(
+        getParam(request.params.taskId),
+        request.auth!.userId,
+        'CLEANER',
+        undefined,
+        checklist,
+      ),
+    )
   }),
 )
 

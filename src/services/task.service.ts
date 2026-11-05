@@ -668,6 +668,7 @@ export const createTaskService = () => {
       userId: string,
       actorRole: UserRole = 'VOLUNTEER',
       resultingBedState?: 'READY' | 'OCCUPIED',
+      roomChecklist?: { acOk?: boolean; lightOk?: boolean },
     ) {
       const task = await TaskModel.findById(taskId)
       if (!task || String(task.assignedToId) !== userId) throw new HttpError(400, 'Task cannot be completed by this user')
@@ -830,7 +831,15 @@ export const createTaskService = () => {
           ? 'The cleaning completion was recorded in the service history.'
           : `${task.points} points were credited to the volunteer.`,
       )
-      emitRealtimeEvent('tasks:updated', { type: 'completed', taskId })
+      const roomChecklistEvent =
+        task.cleaningLocationType === 'ROOM' && (roomChecklist?.acOk || roomChecklist?.lightOk)
+          ? { acOk: Boolean(roomChecklist.acOk), lightOk: Boolean(roomChecklist.lightOk) }
+          : undefined
+      emitRealtimeEvent('tasks:updated', {
+        type: 'completed',
+        taskId,
+        ...roomChecklistEvent,
+      })
       return serializeTask(task.toObject())
     },
 
