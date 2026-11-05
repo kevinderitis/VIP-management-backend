@@ -608,6 +608,49 @@ export const createTaskService = () => {
       return serializeTask(task.toObject())
     },
 
+    async delegate(taskId: string, fromUserId: string, toCleanerId: string) {
+      const task = await TaskModel.findById(taskId)
+      if (!task || task.audience !== 'CLEANING') throw new HttpError(404, 'Cleaning task not found')
+      if (String(task.assignedToId) !== fromUserId) throw new HttpError(403, 'This task is not assigned to you')
+      if (!['ASSIGNED', 'SCHEDULED'].includes(task.status)) throw new HttpError(400, 'Task cannot be delegated')
+      if (toCleanerId === fromUserId) throw new HttpError(400, 'Choose another cleaner')
+
+      const [fromUser, toCleaner] = await Promise.all([
+        UserModel.findById(fromUserId),
+        UserModel.findById(toCleanerId),
+      ])
+      if (!fromUser || fromUser.role !== 'CLEANER') throw new HttpError(404, 'Cleaner not found')
+      if (!toCleaner || toCleaner.role !== 'CLEANER' || !toCleaner.isActive) {
+        throw new HttpError(404, 'Cleaner not found')
+      }
+
+      const previousAssigneeId = fromUserId
+      task.set('assignedToId', toCleaner._id)
+      task.set('lastAssignedToId', toCleaner._id)
+      task.status = task.publishedAt.getTime() > Date.now() ? 'SCHEDULED' : 'ASSIGNED'
+      task.set('startedAt', undefined)
+      await task.save()
+
+      await activityService.create(
+        'TASK_TAKEN',
+        `Task delegated: ${task.title}`,
+        `${fromUser.name} delegated this task to ${toCleaner.name}.`,
+      )
+      await sendPushNotificationsToUsers([String(toCleaner._id)], {
+        title: 'Task delegated to you',
+        body: `${task.title} was delegated to you by ${fromUser.name}.`,
+        tag: `task-${String(task._id)}`,
+        url: appPathForAudience(task.audience),
+      })
+      emitRealtimeEvent('tasks:updated', {
+        type: 'delegated',
+        taskId,
+        assigneeId: String(toCleaner._id),
+        previousAssigneeId,
+      })
+      return serializeTask(task.toObject())
+    },
+
     async takeover(taskId: string, userId: string) {
       const task = await TaskModel.findById(taskId)
       if (!task || task.audience !== 'CLEANING') throw new HttpError(404, 'Cleaning task not found')

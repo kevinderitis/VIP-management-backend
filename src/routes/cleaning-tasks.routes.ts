@@ -133,6 +133,21 @@ router.post(
 )
 
 router.post(
+  '/:taskId/delegate',
+  requireRole('CLEANER'),
+  asyncHandler(async (request, response) => {
+    const payload = z.object({ cleanerId: z.string().min(1) }).parse(request.body)
+    response.json(
+      await taskService.delegate(
+        getParam(request.params.taskId),
+        request.auth!.userId,
+        payload.cleanerId,
+      ),
+    )
+  }),
+)
+
+router.post(
   '/:taskId/claim',
   requireRole('CLEANER'),
   asyncHandler(async (request, response) => {
