@@ -2,6 +2,7 @@ import { hashPassword } from '../lib/auth.js'
 import { HttpError } from '../lib/http-error.js'
 import { TaskCompletionModel } from '../models/task-completion.model.js'
 import { TaskModel } from '../models/task.model.js'
+import { Weekday } from '../domain/enums.js'
 import { UserModel } from '../models/user.model.js'
 import { serializeTask, serializeUser } from '../utils/serializers.js'
 
@@ -47,6 +48,7 @@ export const createCleanerService = () => ({
     title: string
     shift: string
     email?: string
+    offDay?: Weekday
   }) {
     const normalizedUsername = input.username.trim().toLowerCase()
     const normalizedEmail = input.email?.trim().toLowerCase()
@@ -78,6 +80,7 @@ export const createCleanerService = () => ({
         .toUpperCase(),
       title: input.title,
       shift: input.shift,
+      offDay: input.offDay || undefined,
       isActive: true,
       points: 0,
       lifetimePoints: 0,
@@ -96,6 +99,7 @@ export const createCleanerService = () => ({
       title: string
       shift: string
       email?: string
+      offDay?: Weekday
     },
   ) {
     const user = await UserModel.findOne({ _id: userId, role: 'CLEANER' })
@@ -127,6 +131,7 @@ export const createCleanerService = () => ({
     user.username = normalizedUsername
     user.title = input.title
     user.shift = input.shift
+    if (input.offDay !== undefined) user.offDay = input.offDay || undefined
     if (input.password) {
       user.passwordHash = await hashPassword(input.password)
       user.passwordPreview = input.password

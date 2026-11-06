@@ -4,6 +4,7 @@ import { asyncHandler } from '../lib/async-handler.js'
 import { requireRole } from '../middlewares/auth.js'
 import { createCleanerService } from '../services/cleaner.service.js'
 import { getParam } from '../utils/http.js'
+import { WEEKDAYS } from '../domain/enums.js'
 
 const router = Router()
 const cleanerService = createCleanerService()
@@ -15,6 +16,7 @@ const cleanerSchema = z.object({
   password: z.string().min(6).optional(),
   title: z.string().min(1),
   shift: z.string().min(1),
+  offDay: z.enum(WEEKDAYS).optional(),
 })
 
 router.get(
