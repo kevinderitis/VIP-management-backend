@@ -24,17 +24,27 @@ const avatarOf = (name: string) =>
     .slice(0, 2)
     .toUpperCase()
 
-const privateRooms = [
-  '1','2','3','4','5','10','11','12','17','18','19','20','22','23','24','25','26','27','29','30','31','32','32b','33','34','35','36','42','43','51','52','53','54','55','56','57','58','59','60','61','64','65','66','67','68','69','70','100','101','200','201','202',
+const arenaPrivateRooms = [
+  '1','2','3','4','10','11','12','17','18','19','20','22','23','24','25','26','52','53','54','55','56','100','101',
+]
+
+const leoPrivateRooms = [
+  '27','29','30','31','32','32b','33','34','35','36',
+]
+
+const leClubPrivateRooms = [
+  '58','59','60','61','64','65','66','67','68','69','70','71',
 ]
 
 const arenaDorms = [
-  ['A',4],['D',4],['6',4],['7',14],['8',8],['9',14],['13',14],['14',14],['15',8],['16',8],['21',8],['28',8],['37',6],['38',8],['39',8],['40',8],['41',8],['41b',16],['41c',10],['44',4],['45',10],['46',16],['47',12],['51b',6],
+  ['5',4],['6',4],['7',14],['8',8],['9',14],['13',14],['14',14],['15',8],['16',8],['21',8],
 ] as const
 
-const boutiqueDorms = [
-  ['F1',4],['F3',6],['F4',6],['F5',4],['F6',12],['F7',4],
+const leoDorms = [
+  ['28',8],['37',6],['38',8],['39',8],['40',8],['41',8],
 ] as const
+
+
 
 const leClubDorms = [
   ['62',6],['63',6],
@@ -186,9 +196,9 @@ async function main() {
   ])
 
   await CleaningRoomModel.insertMany([
-    ...privateRooms.map((code) => ({
+    ...arenaPrivateRooms.map((code) => ({
       code,
-      section: 'Arena Hostel',
+      section: 'Arena',
       label: `Room ${code}`,
       roomType: 'PRIVATE',
       bedCount: 1,
@@ -196,18 +206,34 @@ async function main() {
     })),
     ...arenaDorms.map(([code, beds]) => ({
       code,
-      section: 'Arena Hostel',
+      section: 'Arena',
       label: `Room ${code}`,
       roomType: 'SHARED',
       bedCount: beds,
       isActive: true,
     })),
-    ...boutiqueDorms.map(([code, beds]) => ({
+    ...leoPrivateRooms.map((code) => ({
       code,
-      section: 'Arena Boutique / Seaview',
+      section: 'Leo',
+      label: `Room ${code}`,
+      roomType: 'PRIVATE',
+      bedCount: 1,
+      isActive: true,
+    })),
+    ...leoDorms.map(([code, beds]) => ({
+      code,
+      section: 'Leo',
       label: `Room ${code}`,
       roomType: 'SHARED',
       bedCount: beds,
+      isActive: true,
+    })),
+    ...leClubPrivateRooms.map((code) => ({
+      code,
+      section: 'Le Club',
+      label: `Room ${code}`,
+      roomType: 'PRIVATE',
+      bedCount: 1,
       isActive: true,
     })),
     ...leClubDorms.map(([code, beds]) => ({
